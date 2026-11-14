@@ -1,0 +1,15 @@
+# RSS/Atom feeds published for syndication. Headlines, summaries and links only.
+# category: company (press releases, ticker-tagged) | macro (market-wide)
+feeds:
+  - name: prnewswire_earnings
+    url: https://www.prnewswire.com/rss/financial-services-latest-news/earnings-list.rss
+    category: company
+  - name: prnewswire_all
+    url: https://www.prnewswire.com/rss/news-releases-list.rss
+    category: company
+  - name: federal_reserve
+    url: https://www.federalreserve.gov/feeds/press_all.xml
+    category: macro
+  - name: sec_press
+    url: https://www.sec.gov/news/pressreleases.rss
+    category: macro

@@ -1,0 +1,11 @@
+# Runtime deps of src/eventalpha that the Airflow image doesn't already ship.
+# Keep in sync with [project.dependencies] in pyproject.toml.
+apache-airflow-providers-postgres
+apache-airflow-providers-common-sql
+typesafe-sdk>=0.7.5
+feedparser>=6.0
+beautifulsoup4>=4.12
+lxml>=5
+psycopg[binary]>=3.2
+boto3>=1.34
+redis>=5.2

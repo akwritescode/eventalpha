@@ -1,0 +1,25 @@
+# HTTPS for the public API. Caddy obtains and renews the Let's Encrypt certificate for
+# API_DOMAIN on its own (HTTP-01 challenge on port 80, then redirects 80 -> 443).
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	# Only the API, its docs and the liveness probe are public; other actuator endpoints are not.
+	@public path /api/* /docs /docs/* /swagger-ui/* /openapi /openapi/* /actuator/health
+	handle @public {
+		reverse_proxy api:8081
+	}
+	handle {
+		respond "Not found" 404
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

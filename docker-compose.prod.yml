@@ -1,0 +1,114 @@
+# Production layer for the Lightsail server:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# * Images come from GHCR, tagged with the git commit (IMAGE_TAG), code baked in.
+# * Data lives on the attached block-storage disk (/srv/eventalpha), not the instance root,
+#   so the instance can be rebuilt or resized without touching it.
+# * Only Caddy (80/443) is reachable from outside. The Airflow UI binds to the server's
+#   loopback; reach it with:  ssh -L 8080:localhost:8080 eventalpha
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: {max-size: "20m", max-file: "5"}
+
+services:
+  airflow-db:
+    <<: *logging
+    restart: always
+    deploy: {resources: {limits: {memory: 768m}}}
+
+  warehouse-db:
+    <<: *logging
+    restart: always
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "effective_cache_size=2GB",
+              "-c", "maintenance_work_mem=256MB", "-c", "max_wal_size=2GB"]
+    deploy: {resources: {limits: {memory: 2g}}}
+
+  redis:
+    <<: *logging
+    restart: always
+    deploy: {resources: {limits: {memory: 256m}}}
+
+  airflow-apiserver:
+    <<: *logging
+    restart: always
+    ports: ["127.0.0.1:8080:8080"]
+    deploy: {resources: {limits: {memory: 1g}}}
+
+  airflow-scheduler:
+    <<: *logging
+    restart: always
+    deploy: {resources: {limits: {memory: 2g}}}  # LocalExecutor: tasks run inside the scheduler
+
+  airflow-dag-processor:
+    <<: *logging
+    restart: always
+    deploy: {resources: {limits: {memory: 512m}}}
+
+  airflow-triggerer:
+    <<: *logging
+    restart: always
+    deploy: {resources: {limits: {memory: 384m}}}
+
+  api:
+    <<: *logging
+    restart: always
+    environment:
+      SERVER_FORWARD_HEADERS_STRATEGY: framework  # trust X-Forwarded-For from Caddy for rate limits
+    deploy: {resources: {limits: {memory: 512m}}}
+
+  caddy:
+    <<: *logging
+    image: caddy:2
+    restart: always
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [api]
+
+  # Keeps <subdomain>.duckdns.org pointed at this server. The static IP rarely changes, so
+  # this is a cheap safety net; a no-op when the record is already right.
+  duckdns:
+    <<: *logging
+    image: curlimages/curl:8.11.1
+    restart: always
+    environment:
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN}
+      API_DOMAIN: ${API_DOMAIN}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sub="$${API_DOMAIN%%.duckdns.org}"
+        while true; do
+          echo "$$(date -u +%FT%TZ) duckdns $$(curl -fsS "https://www.duckdns.org/update?domains=$${sub}&token=$${DUCKDNS_TOKEN}&ip=")"
+          sleep 600
+        done
+
+volumes:
+  airflow-db:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/eventalpha/airflow-db}
+  warehouse-db:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/eventalpha/warehouse-db}
+  airflow-logs:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/eventalpha/airflow-logs}
+  airflow-config:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/eventalpha/airflow-config}
+  raw-data:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/eventalpha/raw-data}
+  redis-data:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/eventalpha/redis}
+  caddy-data:
+    driver: local
+    driver_opts: {type: none, o: bind, device: /srv/eventalpha/caddy-data}
+  caddy-config:

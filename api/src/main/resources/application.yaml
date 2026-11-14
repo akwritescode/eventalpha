@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: eventalpha-api
+  threads:
+    virtual:
+      enabled: true  # Java 21+ virtual threads serve each request; blocking JDBC is cheap again
+  datasource:
+    url: ${EVENTALPHA_JDBC_URL:jdbc:postgresql://localhost:5433/eventalpha}
+    username: ${EVENTALPHA_DB_USER:eventalpha}
+    password: ${EVENTALPHA_DB_PASSWORD:eventalpha}
+    hikari:
+      read-only: true  # the pipeline owns writes; this service only reads
+      maximum-pool-size: 10
+  sql:
+    init:
+      mode: never  # schema belongs to Alembic
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379/0}
+
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /docs
+  api-docs:
+    path: /openapi
+
+eventalpha:
+  rate-limit:
+    requests-per-minute: ${EVENTALPHA_RATE_LIMIT_PER_MINUTE:120}
+  stream:
+    max-clients: ${EVENTALPHA_STREAM_MAX_CLIENTS:100}
+  telegram:  # relay of high-impact events; off while the token is empty
+    bot-token: ${TELEGRAM_BOT_TOKEN:}
+    chat-id: ${TELEGRAM_CHAT_ID:}

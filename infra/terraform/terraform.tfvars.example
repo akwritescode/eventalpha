@@ -1,0 +1,2 @@
+# cp terraform.tfvars.example terraform.tfvars   (git-ignored)
+ssh_allowed_cidrs = ["203.0.113.10/32"] # your public IP: curl -s https://checkip.amazonaws.com

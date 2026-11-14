@@ -1,0 +1,38 @@
+# Local development layer, loaded automatically by `docker compose up`.
+# Builds images from source, mounts code for live edits, publishes ports to localhost,
+# and turns off the Airflow login. Never used on the server.
+
+x-local-airflow: &local-airflow
+  build:
+    context: .
+    dockerfile: docker/airflow.Dockerfile
+  environment: &local-env
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"  # no login screen, localhost only
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/project/src
+    - ./config:/opt/airflow/project/config
+    - ./migrations:/opt/airflow/project/migrations
+    - ./logs:/opt/airflow/logs
+    - ./data:/opt/airflow/data
+
+services:
+  warehouse-db:
+    ports: ["127.0.0.1:5433:5432"]  # Postico / psql from the host
+
+  redis:
+    ports: ["127.0.0.1:6379:6379"]  # redis-cli / RedisInsight from the host
+
+  warehouse-migrate: *local-airflow
+  airflow-init: *local-airflow
+  airflow-bootstrap: *local-airflow
+  airflow-scheduler: *local-airflow
+  airflow-dag-processor: *local-airflow
+  airflow-triggerer: *local-airflow
+  airflow-apiserver:
+    <<: *local-airflow
+    ports: ["127.0.0.1:8080:8080"]
+
+  api:
+    build: ./api
+    ports: ["127.0.0.1:8081:8081"]

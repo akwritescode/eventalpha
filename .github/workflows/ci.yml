@@ -1,0 +1,94 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: eventalpha
+          POSTGRES_PASSWORD: eventalpha
+          POSTGRES_DB: eventalpha
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U eventalpha" --health-interval 5s --health-retries 10
+    env:
+      EVENTALPHA_DATABASE_URL: postgresql+psycopg://eventalpha:eventalpha@localhost:5432/eventalpha
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+      - name: Migrations apply and match the models
+        run: uv run alembic upgrade head && uv run alembic check
+      - name: API test schema is in sync with Alembic
+        run: ./scripts/export-schema.sh && git diff --exit-code api/src/test/resources/db/schema.sql
+
+  java:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew test --console=plain  # Testcontainers uses the runner's Docker
+
+  airflow-dags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the Airflow image and check every DAG imports
+        run: |
+          docker build -f docker/airflow.Dockerfile -t eventalpha-airflow:ci .
+          docker run --rm -e SEC_USER_AGENT=ci -e AIRFLOW__CORE__LOAD_EXAMPLES=false \
+            eventalpha-airflow:ci python -c "
+          from airflow.models.dagbag import DagBag
+          bag = DagBag('/opt/airflow/dags', include_examples=False)
+          assert not bag.import_errors, bag.import_errors
+          print(sorted(bag.dag_ids))"
+
+  images:
+    # Only on main, after every check passes: publish images tagged with the commit SHA.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [python, java, airflow-dags]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/airflow.Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/eventalpha-airflow:${{ github.sha }}
+          cache-from: type=gha,scope=airflow
+          cache-to: type=gha,mode=max,scope=airflow
+      - uses: docker/build-push-action@v6
+        with:
+          context: api
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/eventalpha-api:${{ github.sha }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api

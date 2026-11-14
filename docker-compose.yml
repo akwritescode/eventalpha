@@ -1,0 +1,198 @@
+# EventAlpha stack: Airflow 3 (LocalExecutor), a separate Postgres warehouse, and the Spring Boot API.
+#
+# This file is the production shape: images with the code baked in, no source mounts, nothing
+# published to the host. Layer on top of it:
+#   docker compose up                                                 local dev (docker-compose.override.yml
+#                                                                     is picked up automatically)
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml   the Lightsail server
+#
+# Two databases on purpose: airflow-db holds Airflow's own metadata, warehouse-db is the data.
+name: eventalpha
+
+x-airflow-common: &airflow-common
+  image: ${IMAGE_REGISTRY:-eventalpha}/eventalpha-airflow:${IMAGE_TAG:-local}
+  env_file: [.env]
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/config/simple_auth_passwords.json
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://airflow:${AIRFLOW_DB_PASSWORD:-airflow}@airflow-db/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY:-}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-change-me-local-only}
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    # Headroom over the 30 s default when several processes start at once; parse cost itself
+    # is kept low (stdlib-only registry, name-only assets, lazy heavy imports).
+    AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT: "120"
+    # Warehouse connection, exposed to tasks as conn_id "eventalpha_db".
+    AIRFLOW_CONN_EVENTALPHA_DB: postgresql://eventalpha:${WAREHOUSE_DB_PASSWORD:-eventalpha}@warehouse-db:5432/eventalpha
+    EVENTALPHA_DATABASE_URL: postgresql+psycopg://eventalpha:${WAREHOUSE_DB_PASSWORD:-eventalpha}@warehouse-db:5432/eventalpha
+    REDIS_URL: redis://redis:6379/0
+    RAW_DATA_DIR: /opt/airflow/data/raw
+    FEEDS_CONFIG: /opt/airflow/project/config/feeds.yaml
+  volumes:
+    - airflow-logs:/opt/airflow/logs
+    - airflow-config:/opt/airflow/config
+    - raw-data:/opt/airflow/data
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-depends-on
+    airflow-db:
+      condition: service_healthy
+    warehouse-db:
+      condition: service_healthy
+
+services:
+  airflow-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow}
+      POSTGRES_DB: airflow
+    volumes: [airflow-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Warehouse is ours, so it runs the current major. airflow-db stays on what Airflow's
+  # reference compose uses. Postgres 18 images keep data under /var/lib/postgresql/18/...,
+  # hence the volume mounts the parent directory.
+  warehouse-db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: eventalpha
+      POSTGRES_PASSWORD: ${WAREHOUSE_DB_PASSWORD:-eventalpha}
+      POSTGRES_DB: eventalpha
+    volumes: [warehouse-db:/var/lib/postgresql]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "eventalpha"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Event stream (eventalpha:events) between the pipeline and the API. AOF persistence so
+  # stream history and dedupe marks survive restarts; noeviction because silently dropping
+  # stream entries or dedupe keys would be worse than a write error.
+  redis:
+    image: redis:8
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "200mb", "--maxmemory-policy", "noeviction"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Applies warehouse migrations before the scheduler or the API start.
+  warehouse-migrate:
+    <<: *airflow-common
+    entrypoint: ["bash", "-c", "cd /opt/airflow/project && alembic upgrade head"]
+    depends_on:
+      warehouse-db:
+        condition: service_healthy
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/{logs,config,data/raw}
+        if [ -n "$${AIRFLOW_ADMIN_PASSWORD:-}" ]; then
+          printf '{"admin": "%s"}' "$${AIRFLOW_ADMIN_PASSWORD}" > /opt/airflow/config/simple_auth_passwords.json
+        fi
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/{logs,config,data}
+        /entrypoint airflow version
+    environment:
+      <<: *airflow-env
+      _AIRFLOW_DB_MIGRATE: "true"
+    user: "0:0"
+
+  # Pools cap concurrency across all DAG runs: SEC allows 10 req/s in total, and Jev has
+  # per-organization rate limits. Each task also rate-limits itself; pools bound the sum.
+  airflow-bootstrap:
+    <<: *airflow-common
+    command:
+      - bash
+      - -c
+      - |
+        airflow pools set sec_edgar 2 "SEC EDGAR fetchers (each ~4 req/s; SEC limit is 10)" &&
+        airflow pools set jev_api 3 "Concurrent Jev classification batches"
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+      warehouse-migrate:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Read-only Spring Boot API over the warehouse.
+  api:
+    image: ${IMAGE_REGISTRY:-eventalpha}/eventalpha-api:${IMAGE_TAG:-local}
+    environment:
+      EVENTALPHA_JDBC_URL: jdbc:postgresql://warehouse-db:5432/eventalpha
+      EVENTALPHA_DB_USER: eventalpha
+      EVENTALPHA_DB_PASSWORD: ${WAREHOUSE_DB_PASSWORD:-eventalpha}
+      REDIS_URL: redis://redis:6379/0
+      # Telegram relay of the event stream; disabled while the token is empty.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    depends_on:
+      warehouse-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  airflow-db:
+  warehouse-db:
+  redis-data:
+  airflow-logs:
+  airflow-config:
+  raw-data:
