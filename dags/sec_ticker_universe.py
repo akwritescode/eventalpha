@@ -10,14 +10,13 @@ that have since delisted (survivorship bias). A point-in-time universe is future
 
 from __future__ import annotations
 
-import pendulum
 from airflow.sdk import dag, task
-from eventalpha_common import DEFAULT_ARGS, TICKER_UNIVERSE, engine, settings
+from eventalpha_common import DEFAULT_ARGS, START_DATE, TICKER_UNIVERSE, engine, settings
 
 
 @dag(
-    schedule="0 5 * * *",
-    start_date=pendulum.datetime(2026, 11, 1, tz="UTC"),
+    schedule="30 0 * * *",  # 00:30 ET, before the 01:00 ET SEC DAGs
+    start_date=START_DATE,
     catchup=False,
     default_args=DEFAULT_ARGS,
     tags=["reference", "sec"],

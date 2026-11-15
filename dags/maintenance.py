@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import os
 
-import pendulum
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import dag, task
-from eventalpha_common import DEFAULT_ARGS, settings
+from eventalpha_common import DEFAULT_ARGS, START_DATE, settings
 
 RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "30"))
 LOG_RETENTION_DAYS = 30
@@ -24,8 +23,8 @@ DISK_ALERT_PCT = 80
 
 
 @dag(
-    schedule="30 9 * * *",  # 04:30 ET, after the SEC DAGs, before the US open
-    start_date=pendulum.datetime(2026, 11, 1, tz="UTC"),
+    schedule="30 4 * * *",  # 04:30 ET, after the SEC DAGs, before the US open
+    start_date=START_DATE,
     catchup=False,
     max_active_runs=1,
     default_args=DEFAULT_ARGS,

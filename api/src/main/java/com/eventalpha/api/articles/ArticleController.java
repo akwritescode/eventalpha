@@ -25,7 +25,7 @@ class ArticleController {
         this.articles = articles;
     }
 
-    @Operation(summary = "Recent articles and filings, newest first, with their latest Jev score")
+    @Operation(summary = "Recent articles and filings, newest first, with their latest classification score")
     @GetMapping("/articles")
     ApiResponse<List<ArticleView>> list(
             @RequestParam(required = false) @Pattern(regexp = "[A-Za-z.\\-]{1,10}") String ticker,
@@ -37,7 +37,7 @@ class ArticleController {
         return ApiResponse.of(articles.find(q), articles.lastIngestedAt());
     }
 
-    @Operation(summary = "Articles where Jev flags an event type, e.g. guidance_lowered or m_and_a")
+    @Operation(summary = "Articles where the classifier flags an event type, e.g. guidance_lowered or m_and_a")
     @GetMapping("/events")
     ApiResponse<List<ArticleView>> events(
             @RequestParam @Pattern(regexp = "[a-z_]{2,40}") String type,

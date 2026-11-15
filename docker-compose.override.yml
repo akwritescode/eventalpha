@@ -36,3 +36,15 @@ services:
   api:
     build: ./api
     ports: ["127.0.0.1:8081:8081"]
+
+  # Optional Redis GUI: docker compose --profile tools up -d redisinsight → http://localhost:5540
+  # First time: "Add Redis database" → host "redis", port 6379 (it's saved in the volume).
+  redisinsight:
+    image: redis/redisinsight:3.8.0
+    profiles: [tools]
+    ports: ["127.0.0.1:5540:5540"]
+    volumes: [redisinsight-data:/data]
+    depends_on: [redis]
+
+volumes:
+  redisinsight-data:

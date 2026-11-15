@@ -1,7 +1,7 @@
 """10-K / 10-Q: narrative sections plus structured financials from XBRL.
 
 * Sections: Risk Factors and MD&A, pulled out of the main document by their item headings.
-  Stored whole (not sent to Jev yet). The research use is comparing a company's language
+  Stored whole (not classified yet). The research use is comparing a company's language
   with its previous filing: changes in 10-K text predict returns ("Lazy Prices",
   Cohen, Malloy & Nguyen 2020).
 * Facts: a short list of headline XBRL concepts from SEC's companyfacts API, keeping only the

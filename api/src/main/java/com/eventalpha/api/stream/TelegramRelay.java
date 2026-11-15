@@ -55,7 +55,13 @@ class TelegramRelay {
 
     @EventListener(ApplicationReadyEvent.class)
     void start() {
-        ensureGroup();
+        // The relay is optional: if Redis or Telegram misbehave, the read API must still start.
+        // The loop retries with backoff, so a group that couldn't be created now is retried there.
+        try {
+            ensureGroup();
+        } catch (RuntimeException e) {
+            log.warn("Telegram relay: could not create consumer group yet: {}", e.toString());
+        }
         Thread.ofVirtual().name("telegram-relay").start(this::loop);
         log.info("Telegram relay started as {}/{}", GROUP, consumer.getName());
     }
@@ -74,10 +80,20 @@ class TelegramRelay {
                 return null;
             });
         } catch (RedisSystemException e) {
-            if (!String.valueOf(e.getMessage()).contains("BUSYGROUP")) {
+            if (!isBusyGroup(e)) {
                 throw e;
             }
         }
+    }
+
+    /** Spring wraps the driver's error ("Error in execution"); BUSYGROUP is in the cause chain. */
+    static boolean isBusyGroup(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (String.valueOf(t.getMessage()).contains("BUSYGROUP")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void loop() {
@@ -85,6 +101,7 @@ class TelegramRelay {
         while (running) {
             try {
                 // Own pending entries first (sent before but never acked), then new ones.
+                ensureGroup(); // no-op once the group exists; recovers if Redis was down at startup
                 var batch = read(ReadOffset.from("0"));
                 if (batch.isEmpty()) {
                     batch = read(ReadOffset.lastConsumed());

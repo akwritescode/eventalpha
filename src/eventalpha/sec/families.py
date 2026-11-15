@@ -17,7 +17,7 @@ from eventalpha import db
 from eventalpha.sec import events, form4, form13f, periodic
 from eventalpha.sec.client import RateLimitedClient
 from eventalpha.sec.index import IndexEntry
-from eventalpha.sec.registry import FAMILIES, Family  # noqa: F401  (re-exported)
+from eventalpha.sec.registry import Family
 from eventalpha.sec.submission import fetch_submission
 
 log = logging.getLogger(__name__)

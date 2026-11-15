@@ -14,6 +14,8 @@ x-airflow-common: &airflow-common
   env_file: [.env]
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    # Cron schedules and naive dates are New York time (see dags/eventalpha_common.py).
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: America/New_York
     AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/config/simple_auth_passwords.json
@@ -112,8 +114,8 @@ services:
       _AIRFLOW_DB_MIGRATE: "true"
     user: "0:0"
 
-  # Pools cap concurrency across all DAG runs: SEC allows 10 req/s in total, and Jev has
-  # per-organization rate limits. Each task also rate-limits itself; pools bound the sum.
+  # Pools cap concurrency across all DAG runs: SEC allows 10 req/s in total, and the
+  # classifier provider has its own rate limits. Each task also rate-limits itself; pools bound the sum.
   airflow-bootstrap:
     <<: *airflow-common
     command:
@@ -121,7 +123,7 @@ services:
       - -c
       - |
         airflow pools set sec_edgar 2 "SEC EDGAR fetchers (each ~4 req/s; SEC limit is 10)" &&
-        airflow pools set jev_api 3 "Concurrent Jev classification batches"
+        airflow pools set classifier_api 3 "Concurrent article classification batches"
     depends_on:
       <<: *airflow-depends-on
       airflow-init:

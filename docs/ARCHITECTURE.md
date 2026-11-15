@@ -1,7 +1,9 @@
 # EventAlpha architecture
 
 How the pieces fit together, what each part of the repo does, and why it's built this way.
-For setup commands see the [README](../README.md); for production see [DEPLOY.md](DEPLOY.md).
+For setup commands see the [README](../README.md); diagrams of the data moving through the
+system are in [DATA_FLOW.md](DATA_FLOW.md); requirements, scale and failure modes are in
+[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md); production is in [DEPLOY.md](DEPLOY.md).
 
 ## The big picture
 
@@ -15,7 +17,7 @@ For setup commands see the [README](../README.md); for production see [DEPLOY.md
  RSS feeds ──► rss_news_hourly                                │             │
                                                               │             │ read-only
                asset "articles" updated ──► classify_articles │             ▼
-                                   (TypeSafe Jev) ────────────┘      Spring Boot API :8081
+                                   (pluggable classifier) ────┘      Spring Boot API :8081
                                                                        /api/v1/...  /docs
  every fetch ──► raw landing zone (JSONL, local disk or bucket)
 
@@ -26,7 +28,7 @@ For setup commands see the [README](../README.md); for production see [DEPLOY.md
 Two kinds of data come out of SEC filings:
 
 * **Text events** (8-K, 6-K, Schedule 13D, offerings) and RSS items become `articles`,
-  which Jev classifies for sentiment, materiality and event types.
+  which the classifier scores for sentiment, materiality and event types.
 * **Structured filings** (Form 4, 13F, 10-K/10-Q XBRL) are parsed straight into tables with no
   language model involved.
 
@@ -43,7 +45,7 @@ Two kinds of data come out of SEC filings:
    6. publish the family's asset
 3. **RSS, hourly:** one mapped task per feed, conditional GET (ETag / Last-Modified), upsert.
 4. **Classification:** `classify_articles` runs whenever the `articles` asset updates. It picks
-   articles with no score for the pinned Jev model and question set, classifies them in
+   articles with no score for the configured `<provider>:<model>` and question set, classifies them in
    concurrent batches, then runs SQL quality checks.
 5. **Live events:** after scores commit, articles rated material (≥ 2.5 of 3) and
    company-specific (≥ 0.8) are appended to the Redis Stream `eventalpha:events`, once per
@@ -68,25 +70,32 @@ Two kinds of data come out of SEC filings:
 | `ticker_universe` | ticker | `sec_ticker_universe` |
 | `sec_filings` | SEC accession (ingestion ledger: loaded / skipped / failed + reason) | all SEC DAGs |
 | `articles` | (source, source_id) | events DAG, RSS DAG |
-| `article_scores` | (article, Jev model, questions_version) | `classify_articles` |
+| `article_scores` | (article, `<provider>:<model>`, questions_version) | `classify_articles` |
 | `feed_state` | feed URL (ETag / Last-Modified) | RSS DAG |
 | `insider_transactions` | (accession, row_no) | insider DAG |
 | `institutional_filings`, `institutional_holdings` | accession; (accession, row_no) | holdings DAG |
 | `report_sections` | (accession, section) | periodic DAG |
 | `financial_facts` | (accession, concept, unit, period); unique with `NULLS NOT DISTINCT` | periodic DAG |
 
-## Jev classification
+## Classification
+
+The pipeline talks to a provider-neutral interface in `src/eventalpha/classification/`:
+`questions.py` (what we ask, as choice / scale / yes-no questions), `base.py` (the `Classifier`
+protocol, the result shape, the scoring loop) and `providers/` (one adapter per vendor; only
+these import a vendor SDK). `CLASSIFIER_PROVIDER` selects the adapter, currently `typesafe`, and
+`CLASSIFIER_MODEL` overrides its pinned default. Adding another provider means one new module
+plus an entry in `providers.PROVIDERS`.
 
 One request per article; every question is answered in the same call.
 
-| Question | Type | Stored as |
+| Question | Kind | Stored as |
 |---|---|---|
 | `sentiment` | Choice: bullish / bearish / neutral | label, all three probabilities, `sentiment_score = p_bullish − p_bearish`, confidence |
-| `materiality` | Score, 4 levels (routine → major) | expected level 0–3 and confidence |
-| `company_specific` | Noul (yes/no) | probability; separates company news from macro noise |
-| `event_*` (9 types) | one Noul each: earnings, guidance up/down, M&A, exec change, capital raise/return, legal/regulatory, restructuring | `events` JSONB of probabilities |
+| `materiality` | Scale, 4 levels (routine → major) | expected level 0–3 and confidence |
+| `company_specific` | Yes/no | probability; separates company news from macro noise |
+| `event_*` (9 types) | one yes/no each: earnings, guidance up/down, M&A, exec change, capital raise/return, legal/regulatory, restructuring | `events` JSONB of probabilities |
 
-Scores are keyed on the concrete model version (e.g. `jev-1.14.0`) and `QUESTIONS_VERSION`.
+Scores are keyed on the provider-qualified model id (`<provider>:<model version>`) and `QUESTIONS_VERSION`.
 Changing either one re-classifies history into new rows, and nothing is overwritten.
 
 ## Live event stream (Redis)
@@ -101,13 +110,38 @@ Changing either one re-classifies history into new rows, and nothing is overwrit
 Why a stream and not Postgres `LISTEN/NOTIFY`: notifications are fire-and-forget, so a
 consumer that's offline misses them. A stream keeps history and per-group delivery state.
 
+## Market data, macro and calendars
+
+| Area | Module | Source | Notes |
+|---|---|---|---|
+| Quotes, daily bars, session calendar, earnings dates | `marketdata/` (interface) + `providers/tradier.py` | Tradier brokerage API (`TRADIER_BROKER_KEY`) | Provider-neutral like the classifier (`MARKET_DATA_PROVIDER`). Tradier returns a single result as an object and empty results as `null`; `_as_list` normalizes both. The calendar only covers the current year. |
+| Macro series | `macro/fred.py`, `macro/bls.py` | FRED (`FRED_API_KEY`), BLS API v2 (`BLS_API_KEY` optional) | FRED daily market series lag ~1 day; BLS seasonally adjusted CPI gives same-morning m/m |
+| Release calendar | `macro/bls.py`, `calendars.py` | BLS iCalendar (exact ET times), FRED release dates (exact names), Fed FOMC page | FRED lists its FOMC release daily, so FOMC dates come from the Fed |
+| Inflation nowcasts | `macro/nowcast.py` | Cleveland Fed chart JSON (`nowcast_month/quarter/year.json`) | One row per (horizon, period, measure, vintage); `actual` fills in after release |
+| Trading days | `sessions.py` | `market_sessions` table | Close-relative jobs are scheduled at both candidate times; a gate lets only the right one run |
+
+Free calendar feeds (yfinance, ForexFactory's `faireconomy`) are unofficial, so
+this public project uses the official sources above instead (no consensus forecasts as a result).
+
+## Signals
+
+`signals/` builds the two trading-day alerts (`build.py`), reads inputs with their freshness
+(`inputs.py`), renders Telegram HTML (`render.py`), and loads the SPX top-50 list
+(`universe.py`, `config/spx_universe.yaml`). Each signal is stored in `signals` with its full
+payload and the timestamp of every input, so it can be replayed and evaluated.
+
+| Signal | Window | Score | Confidence |
+|---|---|---|---|
+| `spx_overnight` | Previous session's signal time → now | 0.6 × top-50 news (sentiment × market-cap weight × materiality) + 0.4 × breadth (all company-specific news × materiality), clipped to [-1, 1] | scored share × (0.4 × news volume + 0.6 × top-50 companies covered) |
+| `premarket` | Previous session's close → 09:15 | Materiality-weighted news tone (context; the ranked list is the product) | News volume |
+
 ## Repository layout
 
 | Path | What's there |
 |---|---|
 | `dags/` | DAG wiring only. `sec_edgar_daily.py` generates the four SEC DAGs; `eventalpha_common.py` holds assets, the DB engine, shared `DEFAULT_ARGS` (retries + Telegram alert) |
 | `src/eventalpha/sec/` | `client` (rate-limited, retrying HTTP), `index` (daily index), `submission` (streamed submission parsing), `events`, `form4`, `form13f`, `periodic`, `families` (batch processing + ledger) |
-| `src/eventalpha/` | `sources/rss`, `classify` (Jev), `event_stream` (Redis Stream publisher), `db` (upserts, delete-and-insert per filing), `landing` (raw JSONL to disk or bucket), `alerts` (Telegram, healthchecks.io), `models`, `schema` |
+| `src/eventalpha/` | `classification/` (questions, interface, providers), `marketdata/`, `macro/` (FRED, BLS, nowcast), `calendars.py`, `sessions.py`, `signals/`, `sources/rss`, `event_stream` (Redis Stream publisher), `db` (upserts, delete-and-insert per filing), `landing` (raw JSONL to disk or bucket), `alerts` (Telegram, healthchecks.io), `models`, `schema` |
 | `migrations/` | Alembic: the source of truth for the schema |
 | `api/` | Spring Boot 4 read API (Java 25, Gradle Kotlin DSL, version catalog, Testcontainers tests); `stream/` holds the SSE endpoint and Telegram relay |
 | `scripts/export-schema.sh` | Exports Alembic's DDL for the Java tests (CI fails if it's stale) |
@@ -126,10 +160,10 @@ consumer that's offline misses them. A stream keeps history and per-group delive
 | Concern | Decision |
 |---|---|
 | Re-runs and backfills | Every load is an upsert on a natural key, or delete-and-insert per filing for child rows (an amended filing can have fewer lines). Raw files are written atomically. Any run can be repeated safely. |
-| Time semantics | SEC DAGs use `CronDataIntervalTimetable`: the data interval is the filing date, so `airflow backfill create` rebuilds any range. |
+| Time semantics | SEC DAGs use `CronDataIntervalTimetable("0 1 * * *", timezone=America/New_York)`: the data interval is the filing date (Eastern), so `airflow backfill create` rebuilds any range. All schedules are New York time, so they stay put across daylight saving; storage and run IDs stay UTC. |
 | One DAG per family | Generated from one file, so each family is scheduled, paused and backfilled on its own (two years of 13F without re-fetching every 8-K). |
 | Waiting on SEC | Sensor in `reschedule` mode (no worker held while waiting); `soft_fail` turns holidays into skips. |
-| Rate limits | Airflow pools bound the total concurrency (`sec_edgar` shared by all SEC DAGs, under SEC's 10 req/s; `jev_api` for classification); each client also throttles itself. |
+| Rate limits | Airflow pools bound the total concurrency (`sec_edgar` shared by all SEC DAGs, under SEC's 10 req/s; `classifier_api` for classification); each client also throttles itself. |
 | Bandwidth | EDGAR submissions are streamed and cut off before XBRL, images and archives. RSS uses conditional GET. |
 | Partial failure | A bad filing is recorded in the ledger and skipped; a batch fails (and retries) only when most of it fails. One dead feed doesn't block the others (`all_done`). |
 | Data-aware scheduling | Classification is triggered by the `articles` asset, not a clock. Assets are name-only (`eventalpha.<table>`): a URI would make Airflow load every installed provider's URI handlers at parse time. |

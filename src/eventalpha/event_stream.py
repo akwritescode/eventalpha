@@ -1,6 +1,6 @@
 """High-impact events → Redis Stream `eventalpha:events`.
 
-After classification, articles that Jev rates as material and company-specific are appended
+After classification, articles rated material and company-specific are appended
 to a Redis Stream. Consumers read it independently:
 
 * the API's SSE endpoint (`/api/v1/stream/events`): clients resume from `Last-Event-ID`

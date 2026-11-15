@@ -1,9 +1,10 @@
-"""Text-event filings that become Articles and get classified by Jev:
+"""Text-event filings that become Articles and get classified:
 8-K (US current report), 6-K (foreign issuer report), Schedule 13D (activist / >5% stake
 with intent), S-1 and 424B4/424B5 (offerings, i.e. dilution)."""
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from eventalpha.models import Article
@@ -55,6 +56,19 @@ def item_codes(titles: list[str]) -> list[str]:
     return codes
 
 
+def _generic(description: str, doc_type: str) -> bool:
+    d = description.strip().upper().replace("EXHIBIT", "EX").replace(" ", "").replace("-", "")
+    return d in ("", doc_type.replace("-", "")) or bool(re.fullmatch(r"EX\d+(\.\d+)?", d))
+
+
+def _first_line(text: str, max_len: int = 150) -> str | None:
+    for line in text.splitlines():
+        line = line.strip()
+        if 12 <= len(line) <= max_len and not line.upper().startswith(("EXHIBIT", "EX-99")):
+            return line
+    return None
+
+
 def _published(entry: IndexEntry, sub: Submission) -> datetime:
     return sub.accepted_at or datetime.combine(entry.date_filed, datetime.min.time(), tzinfo=EASTERN)
 
@@ -76,7 +90,10 @@ def to_article(
         items = [t for t in sub.item_titles if not t.lower().startswith("financial statements and exhibits")]
         headline = "; ".join(items) or "Current report"
     elif form == "6-K":
-        headline = next((d.description for d in exhibits if d.description and d.description != d.type), None)
+        labels = (d.description for d in exhibits if d.description and not _generic(d.description, d.type))
+        headline = next(labels, None)
+        # A generic exhibit label ("EXHIBIT 99.1") says nothing; the press release's first line does.
+        headline = headline or next((_first_line(d.text) for d in exhibits if _first_line(d.text)), None)
         headline = headline or "Report of foreign private issuer"
     else:  # S-1, 424B4, 424B5: the prospectus cover and summary say what is being sold
         headline = {"S-1": "Registration statement (S-1)", "424B4": "Final IPO prospectus (424B4)",

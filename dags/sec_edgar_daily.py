@@ -5,14 +5,14 @@
 
 | DAG | Forms | Lands in |
 |---|---|---|
-| `sec_events_daily` | 8-K, 6-K, Schedule 13D(/A), S-1, 424B4, 424B5 | `articles` (then Jev) |
+| `sec_events_daily` | 8-K, 6-K, Schedule 13D(/A), S-1, 424B4, 424B5 | `articles` (then classified) |
 | `sec_insider_daily` | Form 4(/A) | `insider_transactions` |
 | `sec_holdings_daily` | 13F-HR(/A) | `institutional_filings`, `institutional_holdings` |
 | `sec_periodic_daily` | 10-K, 10-Q (+/A) | `report_sections`, `financial_facts` |
 
 * **One DAG per family, from one file** (dynamic DAG generation): each can be backfilled,
   paused, or retried on its own. Two years of 13F history shouldn't re-fetch every 8-K.
-* **Data interval = filing date**: the run for 2026-11-13 always fetches that day's filings,
+* **Data interval = filing date** (New York time): the run for 2026-11-13 always fetches that day's filings,
   so `airflow backfill create` rebuilds any range.
 * **Sensor in reschedule mode** waits for SEC's evening index without holding a worker slot;
   `soft_fail` turns holidays (no index, ever) into skips.
@@ -24,10 +24,9 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-import pendulum
 from airflow.sdk import PokeReturnValue, dag, get_current_context, task
 from airflow.timetables.interval import CronDataIntervalTimetable
-from eventalpha_common import DEFAULT_ARGS, FAMILY_ASSETS, chunk, engine, settings
+from eventalpha_common import DEFAULT_ARGS, FAMILY_ASSETS, NY, START_DATE, chunk, engine, settings
 
 from eventalpha.sec.registry import FAMILIES, Family  # stdlib-only: keeps DAG parsing fast
 
@@ -43,9 +42,10 @@ def build(family: Family):
     @dag(
         dag_id=f"sec_{family.name}_daily",
         description=family.description,
-        # Interval [D 06:00 UTC, D+1 06:00 UTC) runs at D+1 01:00 ET, after SEC posts day D's index.
-        schedule=CronDataIntervalTimetable("0 6 * * *", timezone="UTC"),
-        start_date=pendulum.datetime(2026, 11, 1, tz="UTC"),
+        # Interval [D 01:00 ET, D+1 01:00 ET) runs at D+1 01:00 ET, after SEC posts day D's
+        # index (~22:00 ET). The interval's start date is the filing date.
+        schedule=CronDataIntervalTimetable("0 1 * * *", timezone=NY),
+        start_date=START_DATE,
         catchup=False,
         max_active_runs=2,
         default_args=DEFAULT_ARGS,
@@ -55,7 +55,8 @@ def build(family: Family):
     def sec_family_daily():
         @task
         def filing_date() -> str:
-            return get_current_context()["data_interval_start"].date().isoformat()
+            start = get_current_context()["data_interval_start"]  # delivered in UTC
+            return start.in_timezone(NY).date().isoformat()
 
         @task.short_circuit
         def is_business_day(d: str) -> bool:

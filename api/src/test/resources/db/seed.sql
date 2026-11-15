@@ -12,12 +12,12 @@ VALUES (1, 'sec_edgar', '0001628280-26-073758', '8-K', 'https://example.com/1', 
 INSERT INTO article_scores (article_id, model, questions_version, sentiment, p_bullish, p_bearish, p_neutral,
                             sentiment_score, sentiment_confidence, materiality, materiality_confidence,
                             company_specific, events, input_tokens, scored_at)
-VALUES (1, 'jev-1.13.0', 'v1', 'neutral', 0.3, 0.2, 0.5, 0.1, 0.2, 1.0, 0.5, 0.9,
+VALUES (1, 'typesafe:jev-1.13.0', 'v1', 'neutral', 0.3, 0.2, 0.5, 0.1, 0.2, 1.0, 0.5, 0.9,
         '{"earnings_results": 0.9, "guidance_lowered": 0.1}', 100, now() - interval '20 hours'),
        -- a newer model re-scored article 1: the API must use this row
-       (1, 'jev-1.14.0', 'v1', 'bullish', 0.8, 0.1, 0.1, 0.7, 0.7, 2.0, 0.6, 0.95,
+       (1, 'typesafe:jev-1.14.0', 'v1', 'bullish', 0.8, 0.1, 0.1, 0.7, 0.7, 2.0, 0.6, 0.95,
         '{"earnings_results": 0.97, "guidance_lowered": 0.02}', 100, now() - interval '10 hours'),
-       (2, 'jev-1.14.0', 'v1', 'bearish', 0.05, 0.9, 0.05, -0.85, 0.85, 3.0, 0.7, 0.97,
+       (2, 'typesafe:jev-1.14.0', 'v1', 'bearish', 0.05, 0.9, 0.05, -0.85, 0.85, 3.0, 0.7, 0.97,
         '{"earnings_results": 0.1, "guidance_lowered": 0.95}', 100, now() - interval '1 hour');
 
 INSERT INTO insider_transactions (accession, row_no, form_type, issuer_cik, ticker, issuer_name, owner_cik,

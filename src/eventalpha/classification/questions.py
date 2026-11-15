@@ -1,24 +1,44 @@
-"""Jev (TypeSafe System One) classification.
+"""What we ask about every article, in provider-neutral terms.
 
-One request per article; every question is answered in the same call, evaluated
-independently against the same state. Output is typed (labels + probabilities), so
-there is no free text to parse and nothing an article can inject into downstream code.
+A provider adapter (see providers/) translates these into its own API. Three question kinds
+cover everything: pick one label, rate on an ordered scale, or yes/no with a probability.
 """
 
 from __future__ import annotations
 
-import asyncio
-import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
-
-from typesafe_sdk import AsyncTypeSafeClient, Choice, Noul, Question, Score, SystemOneResponse, TypeSafeError
-
-log = logging.getLogger(__name__)
 
 # Bump whenever QUESTIONS changes: scores are keyed on (model, questions_version), so a new
 # version re-classifies history alongside the old scores instead of silently mixing them.
 QUESTIONS_VERSION = "v1"
+
+
+@dataclass(frozen=True)
+class ChoiceQuestion:
+    """Pick exactly one label; the answer carries a probability per label."""
+
+    instructions: str
+    labels: Mapping[str, str]  # label -> what it means
+
+
+@dataclass(frozen=True)
+class ScaleQuestion:
+    """Rate on ordered levels (index 0 = lowest); the answer is the expected level."""
+
+    instructions: str
+    levels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class YesNoQuestion:
+    """Probability that the statement is true."""
+
+    instructions: str
+
+
+Question = ChoiceQuestion | ScaleQuestion | YesNoQuestion
 
 SENTIMENT_LABELS = ("bullish", "bearish", "neutral")
 
@@ -35,12 +55,12 @@ EVENT_QUESTIONS: dict[str, str] = {
 }
 
 QUESTIONS: dict[str, Question] = {
-    "sentiment": Choice(
+    "sentiment": ChoiceQuestion(
         instructions=(
             "You are a short-term equity trader. Judge the likely effect of this news on the "
             "share price of the company it is about over the next trading session."
         ),
-        criteria={
+        labels={
             "bullish": "Likely to push the share price up: beats, raised outlook, favorable deals or rulings.",
             "bearish": "Likely to push the share price down: misses, cut outlook, dilution, losses, "
             "investigations, executive exits under pressure.",
@@ -48,19 +68,17 @@ QUESTIONS: dict[str, Question] = {
             "boilerplate filings, conference attendance.",
         },
     ),
-    "materiality": Score(
+    "materiality": ScaleQuestion(
         instructions="How material is this news to the company's valuation?",
-        criteria=[
+        levels=(
             "Routine: administrative or boilerplate, no new information",
             "Minor: small update, unlikely to matter to investors",
             "Moderate: relevant new information investors will note",
             "Major: likely to move the stock significantly",
-        ],
+        ),
     ),
-    "company_specific": Noul(
-        instructions="Is this news primarily about one specific publicly traded company?"
-    ),
-    **{f"event_{k}": Noul(instructions=v) for k, v in EVENT_QUESTIONS.items()},
+    "company_specific": YesNoQuestion("Is this news primarily about one specific publicly traded company?"),
+    **{f"event_{k}": YesNoQuestion(v) for k, v in EVENT_QUESTIONS.items()},
 }
 
 
@@ -82,49 +100,3 @@ def build_state(article: Mapping[str, Any]) -> str:
         lines.append("")
         lines.append(article["body"])
     return "\n".join(lines)
-
-
-def to_score_row(article_id: int, resp: SystemOneResponse) -> dict[str, Any]:
-    sentiment = resp.choices["sentiment"]
-    probs = {label: float(sentiment.probabilities.get(label, 0.0)) for label in SENTIMENT_LABELS}
-    materiality = resp.scores["materiality"]
-    return {
-        "article_id": article_id,
-        "model": resp.model,  # the concrete version that answered, e.g. "jev-1.14.0"
-        "questions_version": QUESTIONS_VERSION,
-        "sentiment": sentiment.choice,
-        "p_bullish": probs["bullish"],
-        "p_bearish": probs["bearish"],
-        "p_neutral": probs["neutral"],
-        "sentiment_score": probs["bullish"] - probs["bearish"],
-        "sentiment_confidence": float(sentiment.confidence),
-        "materiality": float(materiality.score),
-        "materiality_confidence": float(materiality.confidence),
-        "company_specific": float(resp.nouls["company_specific"].noul),
-        "events": {k: round(float(resp.nouls[f"event_{k}"].noul), 4) for k in EVENT_QUESTIONS},
-        "input_tokens": resp.usage.input_tokens,
-    }
-
-
-async def classify_articles(
-    client: AsyncTypeSafeClient,
-    articles: Sequence[Mapping[str, Any]],
-    model: str,
-    concurrency: int = 8,
-) -> tuple[list[dict[str, Any]], list[int]]:
-    """Classify concurrently. Returns (score rows, ids that failed after SDK retries)."""
-    sem = asyncio.Semaphore(concurrency)
-
-    async def one(article: Mapping[str, Any]) -> dict[str, Any] | None:
-        async with sem:
-            try:
-                resp = await client.system_one(state=build_state(article), questions=QUESTIONS, model=model)
-            except TypeSafeError as exc:
-                log.warning("Jev failed for article %s: %s", article["id"], exc)
-                return None
-            return to_score_row(article["id"], resp)
-
-    results = await asyncio.gather(*(one(a) for a in articles))
-    rows = [r for r in results if r is not None]
-    failed = [a["id"] for a, r in zip(articles, results, strict=True) if r is None]
-    return rows, failed

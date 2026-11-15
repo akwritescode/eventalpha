@@ -85,14 +85,14 @@ class ApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(2)))
                 .andExpect(jsonPath("$.data[0].id").value(2)) // newest first
-                .andExpect(jsonPath("$.data[1].score.model").value("jev-1.14.0"))
+                .andExpect(jsonPath("$.data[1].score.model").value("typesafe:jev-1.14.0"))
                 .andExpect(jsonPath("$.data[1].score.sentiment").value("bullish"))
                 .andExpect(jsonPath("$.data[1].tickers[0]").value("AAON"))
                 .andExpect(jsonPath("$.dataAsOf", notNullValue()));
     }
 
     @Test
-    void eventsFilterOnJevProbability() throws Exception {
+    void eventsFilterOnClassifierProbability() throws Exception {
         mvc.perform(get("/api/v1/events").param("type", "guidance_lowered").param("minProb", "0.8"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)))
@@ -132,6 +132,12 @@ class ApiIntegrationTests {
         mvc.perform(get("/api/v1/articles").param("limit", "100000"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Invalid request"));
+    }
+
+    @Test
+    void rootRedirectsToDocs() throws Exception {
+        mvc.perform(get("/")).andExpect(status().is3xxRedirection())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl("/docs"));
     }
 
     @Test

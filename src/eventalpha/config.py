@@ -22,13 +22,18 @@ def _optional(name: str) -> str | None:
 class Settings:
     database_url: str
     sec_user_agent: str
-    jev_model: str
+    classifier_provider: str
+    classifier_model: str | None
     raw_data_dir: Path
     raw_bucket: str | None
     telegram_bot_token: str | None
     telegram_chat_id: str | None
     healthchecks_ping_url: str | None
     redis_url: str | None
+    market_data_provider: str
+    tradier_broker_key: str | None
+    fred_api_key: str | None
+    bls_api_key: str | None
     sec_requests_per_second: float
 
     @classmethod
@@ -39,8 +44,10 @@ class Settings:
             ),
             # SEC fair-access policy requires a descriptive User-Agent with a contact address.
             sec_user_agent=_required("SEC_USER_AGENT"),
-            # Pin a versioned model: thresholds tuned on one version don't transfer to the next.
-            jev_model=os.environ.get("JEV_MODEL", "jev-1.14.0"),
+            # Which classifier provider scores articles, and which of its models (None = the
+            # provider's pinned default). See eventalpha/classification/providers/.
+            classifier_provider=os.environ.get("CLASSIFIER_PROVIDER", "typesafe"),
+            classifier_model=_optional("CLASSIFIER_MODEL"),
             raw_data_dir=Path(os.environ.get("RAW_DATA_DIR", "data/raw")),
             # Set in production: raw landing goes to object storage instead of local disk.
             raw_bucket=_optional("RAW_BUCKET"),
@@ -48,5 +55,9 @@ class Settings:
             telegram_chat_id=_optional("TELEGRAM_CHAT_ID"),
             healthchecks_ping_url=_optional("HEALTHCHECKS_PING_URL"),
             redis_url=_optional("REDIS_URL"),
+            market_data_provider=os.environ.get("MARKET_DATA_PROVIDER", "tradier"),
+            tradier_broker_key=_optional("TRADIER_BROKER_KEY"),
+            fred_api_key=_optional("FRED_API_KEY"),
+            bls_api_key=_optional("BLS_API_KEY"),
             sec_requests_per_second=float(os.environ.get("SEC_REQUESTS_PER_SECOND", "4")),
         )

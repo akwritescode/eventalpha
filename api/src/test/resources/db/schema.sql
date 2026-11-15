@@ -190,5 +190,105 @@ CREATE INDEX ix_holdings_cusip ON institutional_holdings (cusip);
 
 INSERT INTO alembic_version (version_num) VALUES ('e6fd1042f7a3') RETURNING alembic_version.version_num;
 
+-- Running upgrade e6fd1042f7a3 -> 45fd705c4233
+
+CREATE TABLE earnings_events (
+    ticker VARCHAR(16) NOT NULL, 
+    event_date DATE NOT NULL, 
+    description TEXT NOT NULL, 
+    status VARCHAR(16) NOT NULL, 
+    fiscal_year INTEGER, 
+    source VARCHAR(32) NOT NULL, 
+    fetched_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    PRIMARY KEY (ticker, event_date)
+);
+
+CREATE INDEX ix_earnings_events_date ON earnings_events (event_date);
+
+CREATE TABLE econ_events (
+    source VARCHAR(16) NOT NULL, 
+    event_key VARCHAR(200) NOT NULL, 
+    title TEXT NOT NULL, 
+    event_date DATE NOT NULL, 
+    scheduled_at TIMESTAMP WITH TIME ZONE, 
+    importance VARCHAR(8) NOT NULL, 
+    fetched_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    PRIMARY KEY (source, event_key)
+);
+
+CREATE INDEX ix_econ_events_event_date ON econ_events (event_date);
+
+CREATE TABLE inflation_nowcasts (
+    horizon VARCHAR(8) NOT NULL, 
+    target_period VARCHAR(8) NOT NULL, 
+    measure VARCHAR(16) NOT NULL, 
+    vintage DATE NOT NULL, 
+    value NUMERIC(12, 6), 
+    actual NUMERIC(12, 6), 
+    fetched_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    PRIMARY KEY (horizon, target_period, measure, vintage)
+);
+
+CREATE TABLE macro_observations (
+    source VARCHAR(16) NOT NULL, 
+    series_id VARCHAR(32) NOT NULL, 
+    period DATE NOT NULL, 
+    value NUMERIC(20, 6), 
+    preliminary BOOLEAN DEFAULT 'false' NOT NULL, 
+    fetched_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    PRIMARY KEY (source, series_id, period)
+);
+
+CREATE TABLE market_sessions (
+    day DATE NOT NULL, 
+    is_open BOOLEAN NOT NULL, 
+    open_time TIME WITHOUT TIME ZONE, 
+    close_time TIME WITHOUT TIME ZONE, 
+    description TEXT NOT NULL, 
+    source VARCHAR(32) NOT NULL, 
+    fetched_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    PRIMARY KEY (day)
+);
+
+CREATE TABLE market_snapshots (
+    session_date DATE NOT NULL, 
+    kind VARCHAR(16) NOT NULL, 
+    symbol VARCHAR(16) NOT NULL, 
+    captured_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+    last NUMERIC(18, 6), 
+    prev_close NUMERIC(18, 6), 
+    change_pct NUMERIC(10, 4), 
+    bid NUMERIC(18, 6), 
+    ask NUMERIC(18, 6), 
+    volume BIGINT, 
+    trade_date DATE, 
+    PRIMARY KEY (session_date, kind, symbol)
+);
+
+CREATE TABLE price_bars_daily (
+    symbol VARCHAR(16) NOT NULL, 
+    day DATE NOT NULL, 
+    open NUMERIC(18, 6) NOT NULL, 
+    high NUMERIC(18, 6) NOT NULL, 
+    low NUMERIC(18, 6) NOT NULL, 
+    close NUMERIC(18, 6) NOT NULL, 
+    volume BIGINT, 
+    source VARCHAR(32) NOT NULL, 
+    PRIMARY KEY (symbol, day)
+);
+
+CREATE TABLE signals (
+    signal_type VARCHAR(32) NOT NULL, 
+    session_date DATE NOT NULL, 
+    generated_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+    score FLOAT, 
+    confidence FLOAT, 
+    payload JSONB NOT NULL, 
+    inputs_as_of JSONB NOT NULL, 
+    PRIMARY KEY (signal_type, session_date)
+);
+
+UPDATE alembic_version SET version_num='45fd705c4233' WHERE alembic_version.version_num = 'e6fd1042f7a3';
+
 COMMIT;
 

@@ -26,7 +26,7 @@ class Family:
 FAMILIES: dict[str, Family] = {
     f.name: f
     for f in (
-        Family("events", EVENT_FORMS, True, 25, "8-K, 6-K, Schedule 13D, S-1, 424B4/5 → articles (Jev)"),
+        Family("events", EVENT_FORMS, True, 25, "8-K, 6-K, Schedule 13D, S-1, 424B4/5 → articles (classified)"),
         Family("insider", INSIDER_FORMS, True, 100, "Form 4 insider transactions"),
         Family("holdings", HOLDINGS_FORMS, False, 40, "13F-HR institutional holdings"),
         Family("periodic", PERIODIC_FORMS, True, 10, "10-K / 10-Q sections and XBRL facts"),

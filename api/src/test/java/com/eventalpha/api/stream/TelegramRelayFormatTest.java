@@ -19,4 +19,12 @@ class TelegramRelayFormatTest {
                 .contains("guidance_lowered, earnings_results")
                 .endsWith("<a href=\"https://example.com/2\">source</a>");
     }
+
+    @Test
+    void busyGroupIsFoundInTheCauseChain() {
+        var wrapped = new org.springframework.data.redis.RedisSystemException("Error in execution",
+                new RuntimeException("BUSYGROUP Consumer Group name already exists"));
+        assertThat(TelegramRelay.isBusyGroup(wrapped)).isTrue();
+        assertThat(TelegramRelay.isBusyGroup(new RuntimeException("connection refused"))).isFalse();
+    }
 }

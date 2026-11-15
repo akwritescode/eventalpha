@@ -1,0 +1,78 @@
+# Top S&P 500 companies by market cap, used by the SPX overnight signal.
+# Generated 2026-11-14 by scripts/refresh_spx_universe.py (re-run quarterly).
+#
+# weight = this company's market cap as a % of the listed companies' combined cap, where
+#   market cap = latest price (Tradier quote) x weighted-average diluted (else basic) shares
+#   outstanding from the company's most recent 10-Q/10-K XBRL facts (SEC companyfacts API).
+#   Companies that only tag shares per class (omitted by companyfacts: Visa, Berkshire) use
+#   the public float from their latest 10-K cover, scaled by the price change since then.
+# An approximation of S&P's float-adjusted weights, not the official (licensed) index weights.
+# Multi-class companies count once (share counts cover all classes).
+# Tickers are spelled as in SEC's ticker list (BRK-B).
+as_of: "2026-11-14"
+weight_basis: share of top-50 market cap (%)
+companies:
+  - {name: "Apple Inc.", cik: "320193", tickers: [AAPL], weight: 12.09}  # $5,244B, diluted shares as of 2026-09-26
+  - {name: "NVIDIA CORP", cik: "1045810", tickers: [NVDA], weight: 9.14}  # $3,963B, diluted shares as of 2026-07-26
+  - {name: "MICROSOFT CORP", cik: "789019", tickers: [MSFT], weight: 8.99}  # $3,901B, diluted shares as of 2026-09-30
+  - {name: "Alphabet Inc.", cik: "1652044", tickers: [GOOGL, GOOG], weight: 8.40}  # $3,645B, diluted shares as of 2026-09-30
+  - {name: "AMAZON COM INC", cik: "1018724", tickers: [AMZN], weight: 6.70}  # $2,907B, diluted shares as of 2026-09-30
+  - {name: "Broadcom Inc.", cik: "1730168", tickers: [AVGO], weight: 3.91}  # $1,695B, diluted shares as of 2026-08-02
+  - {name: "Meta Platforms, Inc.", cik: "1326801", tickers: [META], weight: 3.80}  # $1,648B, diluted shares as of 2026-09-30
+  - {name: "Tesla, Inc.", cik: "1318605", tickers: [TSLA], weight: 3.18}  # $1,381B, diluted shares as of 2026-09-30
+  - {name: "ELI LILLY & Co", cik: "59478", tickers: [LLY], weight: 2.98}  # $1,291B, diluted shares as of 2026-09-30
+  - {name: "BERKSHIRE HATHAWAY INC", cik: "1067983", tickers: [BRK-B], weight: 2.54}  # $1,102B, public float as of 2025-06-30 scaled by price
+  - {name: "Walmart Inc.", cik: "104169", tickers: [WMT], weight: 2.36}  # $1,023B, diluted shares as of 2026-07-31
+  - {name: "JPMORGAN CHASE & CO", cik: "19617", tickers: [JPM], weight: 2.15}  # $934B, diluted shares as of 2026-09-30
+  - {name: "MICRON TECHNOLOGY INC", cik: "723125", tickers: [MU], weight: 2.05}  # $890B, diluted shares as of 2026-09-03
+  - {name: "ADVANCED MICRO DEVICES INC", cik: "2488", tickers: [AMD], weight: 2.04}  # $885B, diluted shares as of 2026-09-26
+  - {name: "ExxonMobil Holdings Corp", cik: "2115436", tickers: [XOM], weight: 1.64}  # $712B, basic shares as of 2026-09-30
+  - {name: "VISA INC.", cik: "1403161", tickers: [V], weight: 1.63}  # $707B, public float as of 2026-03-31 scaled by price
+  - {name: "JOHNSON & JOHNSON", cik: "200406", tickers: [JNJ], weight: 1.61}  # $699B, diluted shares as of 2026-09-27
+  - {name: "Mastercard Inc", cik: "1141391", tickers: [MA], weight: 1.35}  # $584B, diluted shares as of 2026-09-30
+  - {name: "AbbVie Inc.", cik: "1551152", tickers: [ABBV], weight: 1.20}  # $523B, diluted shares as of 2026-09-30
+  - {name: "COSTCO WHOLESALE CORP /NEW", cik: "909832", tickers: [COST], weight: 1.13}  # $492B, diluted shares as of 2026-08-30
+  - {name: "CHEVRON CORP", cik: "93410", tickers: [CVX], weight: 1.00}  # $434B, diluted shares as of 2026-09-30
+  - {name: "Palantir Technologies Inc.", cik: "1321655", tickers: [PLTR], weight: 1.00}  # $432B, diluted shares as of 2026-09-30
+  - {name: "COCA COLA CO", cik: "21344", tickers: [KO], weight: 0.99}  # $428B, diluted shares as of 2026-10-02
+  - {name: "PROCTER & GAMBLE Co", cik: "80424", tickers: [PG], weight: 0.94}  # $409B, diluted shares as of 2026-09-30
+  - {name: "CISCO SYSTEMS, INC.", cik: "858877", tickers: [CSCO], weight: 0.88}  # $381B, diluted shares as of 2026-07-25
+  - {name: "ORACLE CORP", cik: "1341439", tickers: [ORCL], weight: 0.87}  # $376B, diluted shares as of 2026-08-31
+  - {name: "BANK OF AMERICA CORP /DE/", cik: "70858", tickers: [BAC], weight: 0.86}  # $373B, diluted shares as of 2026-09-30
+  - {name: "UNITEDHEALTH GROUP INC", cik: "731766", tickers: [UNH], weight: 0.85}  # $369B, diluted shares as of 2026-09-30
+  - {name: "Merck & Co., Inc.", cik: "310158", tickers: [MRK], weight: 0.84}  # $365B, diluted shares as of 2026-09-30
+  - {name: "GENERAL ELECTRIC CO", cik: "40545", tickers: [GE], weight: 0.80}  # $347B, diluted shares as of 2026-09-30
+  - {name: "HOME DEPOT, INC.", cik: "354950", tickers: [HD], weight: 0.80}  # $347B, diluted shares as of 2026-08-02
+  - {name: "Philip Morris International Inc.", cik: "1413329", tickers: [PM], weight: 0.72}  # $310B, diluted shares as of 2026-09-30
+  - {name: "MORGAN STANLEY", cik: "895421", tickers: [MS], weight: 0.69}  # $300B, diluted shares as of 2026-09-30
+  - {name: "APPLIED MATERIALS INC /DE", cik: "6951", tickers: [AMAT], weight: 0.68}  # $296B, diluted shares as of 2026-07-26
+  - {name: "LAM RESEARCH CORP", cik: "707549", tickers: [LRCX], weight: 0.65}  # $284B, diluted shares as of 2026-09-27
+  - {name: "GOLDMAN SACHS GROUP INC", cik: "886982", tickers: [GS], weight: 0.64}  # $279B, diluted shares as of 2026-09-30
+  - {name: "TEXAS INSTRUMENTS INC", cik: "97476", tickers: [TXN], weight: 0.64}  # $279B, diluted shares as of 2026-09-30
+  - {name: "CATERPILLAR INC", cik: "18230", tickers: [CAT], weight: 0.64}  # $278B, diluted shares as of 2026-09-30
+  - {name: "RTX Corp", cik: "101829", tickers: [RTX], weight: 0.63}  # $271B, diluted shares as of 2026-09-30
+  - {name: "WELLS FARGO & COMPANY/MN", cik: "72971", tickers: [WFC], weight: 0.61}  # $265B, diluted shares as of 2026-09-30
+  - {name: "NETFLIX INC", cik: "1065280", tickers: [NFLX], weight: 0.61}  # $264B, diluted shares as of 2026-09-30
+  - {name: "THERMO FISHER SCIENTIFIC INC.", cik: "97745", tickers: [TMO], weight: 0.60}  # $260B, diluted shares as of 2026-09-26
+  - {name: "Arista Networks, Inc.", cik: "1596532", tickers: [ANET], weight: 0.58}  # $252B, diluted shares as of 2026-09-30
+  - {name: "LINDE PLC", cik: "1707925", tickers: [LIN], weight: 0.56}  # $244B, diluted shares as of 2026-09-30
+  - {name: "INTERNATIONAL BUSINESS MACHINES CORP", cik: "51143", tickers: [IBM], weight: 0.54}  # $236B, diluted shares as of 2026-09-30
+  - {name: "CITIGROUP INC", cik: "831001", tickers: [C], weight: 0.54}  # $232B, diluted shares as of 2025-12-31
+  - {name: "AMERICAN EXPRESS CO", cik: "4962", tickers: [AXP], weight: 0.50}  # $218B, diluted shares as of 2026-09-30
+  - {name: "GE Vernova Inc.", cik: "1996810", tickers: [GEV], weight: 0.50}  # $217B, diluted shares as of 2026-09-30
+  - {name: "Walt Disney Co", cik: "1744489", tickers: [DIS], weight: 0.49}  # $210B, diluted shares as of 2026-06-27
+  - {name: "BlackRock, Inc.", cik: "2012383", tickers: [BLK], weight: 0.46}  # $201B, diluted shares as of 2026-09-30
+
+# Market context quoted at each snapshot (Tradier symbols). Indexes have no volume.
+context_symbols:
+  SPX: S&P 500 index
+  VIX: Volatility index
+  SPY: S&P 500 ETF
+  QQQ: Nasdaq-100 ETF
+  IWM: Russell 2000 ETF
+  TLT: 20+ year Treasuries (long rates, inverse)
+  IEF: 7-10 year Treasuries
+  HYG: High-yield credit
+  USO: Crude oil
+  UUP: US dollar
+  GLD: Gold

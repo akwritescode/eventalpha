@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    Time,
     UniqueConstraint,
     func,
 )
@@ -77,7 +78,7 @@ articles = Table(
     Index("ix_articles_tickers", "tickers", postgresql_using="gin"),
 )
 
-# One row per (article, model, question set). A new Jev version or a revised question set
+# One row per (article, model, question set). A new classifier model or a revised question set
 # produces new rows instead of overwriting, so re-classifying history is just a backfill.
 article_scores = Table(
     "article_scores",
@@ -211,4 +212,118 @@ financial_facts = Table(
     UniqueConstraint("accession", "concept", "unit", "period_start", "period_end",
                      name="uq_financial_facts_fact", postgresql_nulls_not_distinct=True),
     Index("ix_financial_facts_cik_concept", "cik", "concept", "period_end"),
+)
+
+# ---------- market sessions and prices ----------
+
+# The exchange calendar as the market data provider reports it (holidays, 13:00 early closes).
+# Every trading-day check reads this table.
+market_sessions = Table(
+    "market_sessions",
+    metadata,
+    Column("day", Date, primary_key=True),
+    Column("is_open", Boolean, nullable=False),
+    Column("open_time", Time),  # America/New_York
+    Column("close_time", Time),
+    Column("description", Text, nullable=False),
+    Column("source", String(32), nullable=False),
+    Column("fetched_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+price_bars_daily = Table(
+    "price_bars_daily",
+    metadata,
+    Column("symbol", String(16), primary_key=True),
+    Column("day", Date, primary_key=True),
+    Column("open", Numeric(18, 6), nullable=False),
+    Column("high", Numeric(18, 6), nullable=False),
+    Column("low", Numeric(18, 6), nullable=False),
+    Column("close", Numeric(18, 6), nullable=False),
+    Column("volume", BigInteger),  # NULL for indexes (SPX, VIX)
+    Column("source", String(32), nullable=False),
+)
+
+# Point-in-time quotes taken for a signal (premarket / close), kept so every signal can be
+# replayed with exactly the prices it saw.
+market_snapshots = Table(
+    "market_snapshots",
+    metadata,
+    Column("session_date", Date, primary_key=True),
+    Column("kind", String(16), primary_key=True),  # premarket | close
+    Column("symbol", String(16), primary_key=True),
+    Column("captured_at", DateTime(timezone=True), nullable=False),
+    Column("last", Numeric(18, 6)),
+    Column("prev_close", Numeric(18, 6)),
+    Column("change_pct", Numeric(10, 4)),
+    Column("bid", Numeric(18, 6)),
+    Column("ask", Numeric(18, 6)),
+    Column("volume", BigInteger),
+    Column("trade_date", Date),
+)
+
+# ---------- macro ----------
+
+macro_observations = Table(
+    "macro_observations",
+    metadata,
+    Column("source", String(16), primary_key=True),  # fred | bls
+    Column("series_id", String(32), primary_key=True),
+    Column("period", Date, primary_key=True),  # observation date; monthly series use the 1st
+    Column("value", Numeric(20, 6)),
+    Column("preliminary", Boolean, nullable=False, server_default="false"),
+    Column("fetched_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# Scheduled releases (BLS with exact times; FRED's curated list with dates only).
+econ_events = Table(
+    "econ_events",
+    metadata,
+    Column("source", String(16), primary_key=True),
+    Column("event_key", String(200), primary_key=True),
+    Column("title", Text, nullable=False),
+    Column("event_date", Date, nullable=False, index=True),
+    Column("scheduled_at", DateTime(timezone=True)),  # NULL when only the date is known
+    Column("importance", String(8), nullable=False),  # high | medium
+    Column("fetched_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+earnings_events = Table(
+    "earnings_events",
+    metadata,
+    Column("ticker", String(16), primary_key=True),
+    Column("event_date", Date, primary_key=True),
+    Column("description", Text, nullable=False),
+    Column("status", String(16), nullable=False),  # Confirmed | Estimated
+    Column("fiscal_year", Integer),
+    Column("source", String(32), nullable=False),
+    Column("fetched_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Index("ix_earnings_events_date", "event_date"),
+)
+
+# Cleveland Fed inflation nowcasts, one row per (horizon, target period, measure, vintage).
+# `actual` fills in once the official number is released, which gives nowcast-vs-actual surprise.
+inflation_nowcasts = Table(
+    "inflation_nowcasts",
+    metadata,
+    Column("horizon", String(8), primary_key=True),  # mom | qoq | yoy
+    Column("target_period", String(8), primary_key=True),  # 2026-11 or 2026:Q4
+    Column("measure", String(16), primary_key=True),  # cpi | core_cpi | pce | core_pce
+    Column("vintage", Date, primary_key=True),  # the day this nowcast was published
+    Column("value", Numeric(12, 6)),
+    Column("actual", Numeric(12, 6)),
+    Column("fetched_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# ---------- signals ----------
+
+signals = Table(
+    "signals",
+    metadata,
+    Column("signal_type", String(32), primary_key=True),  # spx_overnight | premarket
+    Column("session_date", Date, primary_key=True),
+    Column("generated_at", DateTime(timezone=True), nullable=False),
+    Column("score", Float),  # -1 (bearish) .. 1 (bullish); NULL for list-style signals
+    Column("confidence", Float),
+    Column("payload", JSONB, nullable=False),  # drivers, ranked tickers, macro block
+    Column("inputs_as_of", JSONB, nullable=False),  # freshness of every input it used
 )

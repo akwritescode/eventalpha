@@ -26,7 +26,7 @@ Lightsail bucket: raw/ (landing JSONL), warehouse/ (nightly pg_dump, 30-day rete
 2. **Telegram:** create a bot with @BotFather, message it once, then read your chat id from
    `https://api.telegram.org/bot<token>/getUpdates`. The same bot gets DAG failures (from
    Airflow) and high-impact events (from the API's Redis consumer group).
-3. **healthchecks.io:** create a check with schedule `0 7 * * 2-6` (UTC) and 3 h grace. The
+3. **healthchecks.io:** create a check with cron `0 2 * * 2-6`, timezone `America/New_York`, and 3 h grace. The
    events DAG pings it after each weekday's filings land.
 4. **Infrastructure:**
    ```bash

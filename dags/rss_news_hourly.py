@@ -16,14 +16,13 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
-import pendulum
 from airflow.sdk import dag, get_current_context, task
-from eventalpha_common import ARTICLES, DEFAULT_ARGS, engine, settings
+from eventalpha_common import ARTICLES, DEFAULT_ARGS, START_DATE, engine, settings
 
 
 @dag(
-    schedule="5 * * * *",
-    start_date=pendulum.datetime(2026, 11, 1, tz="UTC"),
+    schedule="*/15 * * * *",  # every 15 min: press releases land at 16:01 and 07:00-08:30
+    start_date=START_DATE,
     catchup=False,
     max_active_runs=1,
     default_args=DEFAULT_ARGS,

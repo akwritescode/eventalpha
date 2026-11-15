@@ -208,3 +208,11 @@ def test_cross_references_do_not_end_a_section():
         + "\nItem 3. Quantitative and Qualitative Disclosures\n"
     )
     assert "and more." in periodic.extract_sections("10-Q", text)["mdna"][-20:]
+
+
+def test_6k_generic_exhibit_label_uses_press_release_headline():
+    text = submission("", doc("6-K", "<p>cover</p>")
+                      + doc("EX-99.1", "<p>EXHIBIT 99.1</p><p>Americas Gold and Silver Reports Record Q3 Revenue</p>",
+                            description="EXHIBIT 99.1"))
+    a = events.to_article(entry("6-K", cik="1"), parse_submission(text), {"1": ("Americas Gold", ["USAS"])})
+    assert a.title == "AAON, INC. 6-K: Americas Gold and Silver Reports Record Q3 Revenue"

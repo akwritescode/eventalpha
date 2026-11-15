@@ -7,7 +7,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, computed_field, field_validator
 
-MAX_BODY_CHARS = 20_000  # ~5k tokens; well under Jev's 32k-per-question limit
+MAX_BODY_CHARS = 20_000  # ~5k tokens; keeps classifier requests small and cheap
 
 
 class Article(BaseModel):

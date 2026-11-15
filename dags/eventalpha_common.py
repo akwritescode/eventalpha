@@ -9,6 +9,7 @@ from datetime import timedelta
 from functools import cache
 from typing import TYPE_CHECKING
 
+import pendulum
 from airflow.sdk import Asset
 
 from eventalpha.config import Settings
@@ -17,6 +18,12 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
 
 DB_CONN_ID = "eventalpha_db"
+
+# Schedules are written in New York time: SEC filing dates, the evening index and the trading
+# day are all Eastern. Airflow keeps "0 1 * * *" at 01:00 ET across daylight saving changes
+# (a UTC cron would drift to 02:00 ET every summer). Storage and run IDs stay UTC.
+NY = pendulum.timezone("America/New_York")
+START_DATE = pendulum.datetime(2026, 11, 1, tz=NY)
 
 # Assets give data-aware scheduling: classification runs when articles land,
 # not at a guessed time. The URI doubles as lineage metadata.
@@ -74,3 +81,50 @@ DEFAULT_ARGS = {
     "retry_exponential_backoff": True,
     "on_failure_callback": notify_failure,
 }
+
+
+@cache
+def market_data():
+    from eventalpha.marketdata import create_market_data
+
+    return create_market_data(settings())
+
+
+@cache
+def universe():
+    import os
+    from pathlib import Path
+
+    from eventalpha.signals.universe import load_universe
+
+    return load_universe(Path(os.environ.get("UNIVERSE_CONFIG", "/opt/airflow/project/config/spx_universe.yaml")))
+
+
+def scheduled_local_time(context) -> pendulum.DateTime:
+    """When this run is "for", in New York time: params.as_of on a manual replay, otherwise the
+    time it was scheduled for."""
+    as_of = (context.get("params") or {}).get("as_of")
+    if as_of:
+        return pendulum.parse(as_of).in_timezone(NY)
+    return pendulum.instance(context["dag_run"].run_after).in_timezone(NY)
+
+
+def trading_session_gate(context, close_offset: timedelta | None = None) -> bool:
+    """Should this run fire? Market must be open today. With `close_offset`, the run must also be
+    the one scheduled at today's close + offset (DAGs schedule both the normal and the early-close
+    time; only one passes). Manual runs with params.force=true skip the time check."""
+    from eventalpha.sessions import close_relative_due, get_session, refresh_sessions
+
+    when = scheduled_local_time(context)
+    session = get_session(engine(), when.date())
+    if session is None:  # calendar not loaded yet for this month
+        refresh_sessions(engine(), market_data(), when.date())
+        session = get_session(engine(), when.date())
+    if session is None or not session.is_open:
+        print(f"{when.date()} is not a trading day ({session and session.description})")
+        return False
+    if close_offset is None or context["params"].get("force") or context["params"].get("as_of"):
+        return True  # manual run or replay: skip the "is this the run that's due" check
+    due = close_relative_due(session, when.time().replace(second=0, microsecond=0), close_offset)
+    print(f"session closes {session.close_time}; run at {when:%H:%M} {'is' if due else 'is not'} the one due")
+    return due
