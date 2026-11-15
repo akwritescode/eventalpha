@@ -296,5 +296,11 @@ ALTER TABLE signals ADD COLUMN message TEXT;
 
 UPDATE alembic_version SET version_num='41b65a6ba799' WHERE alembic_version.version_num = '45fd705c4233';
 
+-- Running upgrade 41b65a6ba799 -> 973a74d4fd9a
+
+ALTER TABLE earnings_events ADD COLUMN market_cap FLOAT;
+
+UPDATE alembic_version SET version_num='973a74d4fd9a' WHERE alembic_version.version_num = '41b65a6ba799';
+
 COMMIT;
 

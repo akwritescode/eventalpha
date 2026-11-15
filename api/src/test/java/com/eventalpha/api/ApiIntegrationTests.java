@@ -147,7 +147,9 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.data[0].insiders30d").value(1));
         mvc.perform(get("/api/v1/calendar/upcoming")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.economic", hasSize(1))) // GDP is outside the 14-day window
-                .andExpect(jsonPath("$.data.earnings[0].ticker").value("NVDA"));
+                .andExpect(jsonPath("$.data.earnings[0].ticker").value("NVDA")) // same day: largest first,
+                .andExpect(jsonPath("$.data.earnings[1].ticker").value("AAA"))  // not alphabetical
+                .andExpect(jsonPath("$.data.earnings[0].marketCap").value(4.5e12));
         mvc.perform(get("/api/v1/macro/nowcast")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].targetPeriod").value("2026-11"))
                 .andExpect(jsonPath("$.data[0].value").value(0.135))
@@ -176,6 +178,18 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.data[0].macro.rows[0].prior").value(0.2))
                 .andExpect(jsonPath("$.data[0].macro.rows[0].surprise").value(0.1))
                 .andExpect(jsonPath("$.data[0].macro.verdict").value("Inflationary surprise"));
+    }
+
+    @Test
+    void feedFiltersToOneTicker() throws Exception {
+        mvc.perform(get("/api/v1/feed").param("ticker", "aaon"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.type == 'sec')]", hasSize(2)))
+                .andExpect(jsonPath("$.data[?(@.type == 'news')]", hasSize(0)))  // the Fed item names no ticker
+                .andExpect(jsonPath("$.data[?(@.type == 'macro')]", hasSize(0)));
+        mvc.perform(get("/api/v1/feed").param("ticker", "ZZZZ"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.type != 'signal')]", hasSize(0)));
     }
 
     @Test

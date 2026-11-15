@@ -56,8 +56,9 @@ class FeedRepository {
 
     // ---------- articles (SEC filings and news) ----------
 
-    List<FeedItem> articles(Instant since, Instant before, int limit, boolean sec, boolean news) {
+    List<FeedItem> articles(Instant since, Instant before, int limit, boolean sec, boolean news, String ticker) {
         String source = sec && news ? "" : sec ? "AND a.source = 'sec_edgar'" : "AND a.source <> 'sec_edgar'";
+        if (ticker != null) source += " AND a.tickers @> ARRAY[CAST(:ticker AS varchar)]";
         return jdbc.sql("""
                         WITH latest AS (
                             SELECT DISTINCT ON (article_id) * FROM article_scores ORDER BY article_id, scored_at DESC)
@@ -69,6 +70,7 @@ class FeedRepository {
                         WHERE a.published_at >= :since AND a.published_at < :before %s
                         ORDER BY a.published_at DESC LIMIT :limit""".formatted(source))
                 .param("since", Timestamp.from(since)).param("before", Timestamp.from(before)).param("limit", limit)
+                .param("ticker", ticker == null ? "" : ticker)
                 .query(this::article)
                 .list();
     }

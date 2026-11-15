@@ -3,8 +3,9 @@ import { Box, Collapse, Link, Stack, Typography } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { FeedItem } from '../api';
 import { etTime, humanize } from '../format';
-import { MONO, T } from '../theme';
+import { T } from '../theme';
 import { Num, Pill, TypeBadge } from './ui';
+import { TickerPill } from './TickerPill';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const pct = (x: number | null | undefined) => (x == null ? '—' : `${Math.round(x * 100)}%`);
@@ -99,7 +100,7 @@ export const FeedCard: React.FC<{ item: FeedItem; related: Related; fresh: boole
           <Pill tone={T.tone[sentiment as 'bullish' | 'bearish' | 'neutral']}>{sig ? sentiment.toUpperCase() : cap(sentiment)}</Pill>
         )}
         {confidence != null && <Pill>Confidence {pct(confidence)}</Pill>}
-        {item.tickers.slice(0, 4).map((t) => <Pill key={t}>{t}</Pill>)}
+        {item.tickers.slice(0, 4).map((t) => <TickerPill key={t} ticker={t} />)}
       </Stack>
 
       {sig && <MetaLine>Signal generated from {sig.contributingEvents} contributing events</MetaLine>}
@@ -173,7 +174,7 @@ export const FeedCard: React.FC<{ item: FeedItem; related: Related; fresh: boole
                   <Stack spacing={0.75}>
                     {sig.contributors.slice(0, 8).map((x) => (
                       <Stack key={x.url ?? x.title} direction="row" spacing={1} alignItems="center">
-                        <Typography sx={{ fontSize: '0.8rem', fontWeight: 600, minWidth: 54, fontFamily: MONO }}>{x.tickers[0] ?? ''}</Typography>
+                        <Box sx={{ minWidth: 62 }}>{x.tickers[0] && <TickerPill ticker={x.tickers[0]} size="sm" />}</Box>
                         {x.sentiment && <Pill tone={T.tone[x.sentiment as 'bullish']}>{cap(x.sentiment)}</Pill>}
                         <Link href={x.url ?? undefined} target="_blank" rel="noopener noreferrer" underline="hover" color="inherit" noWrap sx={{ fontSize: '0.84rem', minWidth: 0 }}>
                           {x.title}

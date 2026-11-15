@@ -4,6 +4,7 @@ import { InsiderBuy } from '../api';
 import { money } from '../format';
 import { useTokens } from '../theme';
 import { AsOf, Empty, Num, Panel } from './ui';
+import { TickerPill } from './TickerPill';
 
 /** Largest open-market purchases; bar length = value, dot = several insiders buying (a cluster). */
 export const InsiderPanel: React.FC<{ buys?: InsiderBuy[]; asOf?: string | null }> = ({ buys = [], asOf }) => {
@@ -17,7 +18,7 @@ export const InsiderPanel: React.FC<{ buys?: InsiderBuy[]; asOf?: string | null 
           <Box key={b.ticker + b.ownerName}>
             <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
               <Typography sx={{ fontSize: '0.82rem', minWidth: 0 }} noWrap>
-                <b>{b.ticker}</b>{' '}
+                <TickerPill ticker={b.ticker} size="sm" />{' '}
                 <Typography component="span" variant="caption" color="text.secondary">
                   {b.ownerName}{b.officerTitle ? `, ${b.officerTitle}` : ''}
                 </Typography>

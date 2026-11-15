@@ -61,7 +61,9 @@ def calendars_daily():
         events = provider.earnings_events([tradier_symbol(t) for t in tickers], today,
                                           today + timedelta(days=LOOKAHEAD_DAYS))
         rows = earnings_rows(events, provider.name)
+        caps = provider.market_caps(sorted({r["ticker"] for r in rows}))  # orders the calendar
         for r in rows:  # store tickers the way SEC spells them, to join with articles
+            r["market_cap"] = caps.get(r["ticker"])
             r["ticker"] = sec_ticker(r["ticker"])
         print(f"{len(rows)} earnings dates for {len(tickers)} tickers")
         return upsert_rows(engine(), "earnings_events", rows, key=["ticker", "event_date"])

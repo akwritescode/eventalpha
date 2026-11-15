@@ -65,7 +65,7 @@ export interface InsiderBuy {
 
 export interface Calendar {
   economic: { eventDate: string; scheduledAt: string | null; title: string; importance: string; source: string }[];
-  earnings: { ticker: string; eventDate: string; status: string }[];
+  earnings: { ticker: string; eventDate: string; status: string; marketCap: number | null }[]; // largest first per day
 }
 
 export interface Nowcast {

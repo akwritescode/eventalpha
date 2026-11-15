@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material';
 import { FeedItem, FeedType } from '../api';
+import CloseIcon from '@mui/icons-material/Close';
 import { useFeed } from '../hooks/useFeed';
+import { setTicker, useTicker } from '../hooks/useTicker';
 import { etDate } from '../format';
-import { T } from '../theme';
+import { MONO, T } from '../theme';
 import { FeedCard, Related } from './FeedCard';
 import { Empty } from './ui';
 
@@ -43,7 +45,8 @@ function relationships(items: FeedItem[]): Map<string, Related> {
 
 export const Stream: React.FC<{ live: boolean; pushVersion: number }> = ({ live, pushVersion }) => {
   const [tab, setTab] = useState(TABS[0]);
-  const feed = useFeed(tab.types, pushVersion);
+  const ticker = useTicker();
+  const feed = useFeed(tab.types, pushVersion, ticker);
   const related = useMemo(() => relationships(feed.items), [feed.items]);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -63,7 +66,7 @@ export const Stream: React.FC<{ live: boolean; pushVersion: number }> = ({ live,
   });
 
   return (
-    <Paper id="stream" sx={{ overflow: 'hidden' }}>
+    <Paper id="stream" sx={{ overflow: 'hidden', scrollMarginTop: 72 }}>
       <Box sx={{ px: { xs: 2, sm: 2.5 }, pt: 2.5, pb: 2 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography variant="h1" sx={{ fontSize: { xs: '1.1rem', sm: '1.3rem' } }}>Market Intelligence Stream</Typography>
@@ -94,11 +97,21 @@ export const Stream: React.FC<{ live: boolean; pushVersion: number }> = ({ live,
             );
           })}
         </Stack>
+        {ticker && (
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1.5, px: 1.5, py: 1, borderRadius: 2, bgcolor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
+            <Typography sx={{ fontSize: '0.86rem', color: T.fgSecondary, flex: 1, minWidth: 0 }}>
+              Showing <Box component="b" sx={{ color: T.amberHover, fontFamily: MONO }}>{ticker}</Box> only: its filings, news and the signals it fed
+            </Typography>
+            <Button size="small" onClick={() => setTicker(null)} startIcon={<CloseIcon fontSize="small" />} sx={{ color: T.fgSecondary, flexShrink: 0 }}>
+              Clear
+            </Button>
+          </Stack>
+        )}
       </Box>
 
       {feed.loading && <Box sx={{ py: 6, textAlign: 'center' }}><CircularProgress size={22} /></Box>}
       {feed.error && !feed.items.length && <Empty>Can't reach the EventAlpha API ({feed.error}).</Empty>}
-      {!feed.loading && !feed.error && !feed.items.length && <Empty>No events of this type in the last 30 days.</Empty>}
+      {!feed.loading && !feed.error && !feed.items.length && <Empty>{ticker ? `No ${ticker} events of this type in the last 60 days.` : 'No events of this type in the last 30 days.'}</Empty>}
 
       {groups.map((g, gi) => (
         <Box key={g.day}>

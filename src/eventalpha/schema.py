@@ -295,6 +295,7 @@ earnings_events = Table(
     Column("description", Text, nullable=False),
     Column("status", String(16), nullable=False),  # Confirmed | Estimated
     Column("fiscal_year", Integer),
+    Column("market_cap", Float),  # $ at fetch time; orders the calendar (largest company first)
     Column("source", String(32), nullable=False),
     Column("fetched_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Index("ix_earnings_events_date", "event_date"),

@@ -108,7 +108,7 @@ class DashboardController {
 
     record EconEvent(LocalDate eventDate, Instant scheduledAt, String title, String importance, String source) {}
 
-    record EarningsEvent(String ticker, LocalDate eventDate, String status) {}
+    record EarningsEvent(String ticker, LocalDate eventDate, String status, Double marketCap) {}
 
     record Calendar(List<EconEvent> economic, List<EarningsEvent> earnings) {}
 
@@ -126,8 +126,9 @@ class DashboardController {
                         rs.getString("title"), rs.getString("importance"), rs.getString("source")))
                 .list();
         var earnings = jdbc.sql("""
-                        SELECT ticker, event_date, status FROM earnings_events
-                        WHERE event_date BETWEEN current_date AND current_date + :days ORDER BY event_date, ticker""")
+                        SELECT ticker, event_date, status, market_cap FROM earnings_events
+                        WHERE event_date BETWEEN current_date AND current_date + :days
+                        ORDER BY event_date, market_cap DESC NULLS LAST, ticker""")  // largest company first
                 .param("days", days)
                 .query(EarningsEvent.class)
                 .list();

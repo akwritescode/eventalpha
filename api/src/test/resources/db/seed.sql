@@ -46,8 +46,9 @@ INSERT INTO econ_events (source, event_key, title, event_date, scheduled_at, imp
 VALUES ('bls', 'cpi', 'Consumer Price Index', current_date + 3, now() + interval '3 days', 'high'),
        ('fred', 'gdp', 'Gross Domestic Product', current_date + 30, NULL, 'high');
 
-INSERT INTO earnings_events (ticker, event_date, description, status, fiscal_year, source)
-VALUES ('NVDA', current_date + 2, 'NVIDIA Q3 Earnings Result', 'Confirmed', 2027, 'tradier');
+INSERT INTO earnings_events (ticker, event_date, description, status, fiscal_year, market_cap, source)
+VALUES ('NVDA', current_date + 2, 'NVIDIA Q3 Earnings Result', 'Confirmed', 2027, 4.5e12, 'tradier'),
+       ('AAA', current_date + 2, 'AAA Q3 Earnings Result', 'Estimated', 2026, 1.2e8, 'tradier');
 
 INSERT INTO inflation_nowcasts (horizon, target_period, measure, vintage, value, actual)
 VALUES ('mom', '2026-11', 'cpi', current_date - 2, 0.12, NULL),

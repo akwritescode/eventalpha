@@ -136,6 +136,23 @@ class TradierMarketData:
                                                      e.get("event_fiscal_year")))
         return out
 
+    def market_caps(self, symbols: list[str]) -> dict[str, float]:
+        """From the company fundamentals (beta). A symbol can map to several listings (old and
+        current share-class records); the largest reported market cap is the live one."""
+        out: dict[str, float] = {}
+        for i in range(0, len(symbols), 25):
+            data = self._get_beta("/markets/fundamentals/company", {"symbols": ",".join(symbols[i : i + 25])})
+            for item in _as_list(data):
+                caps = [
+                    float(p["market_cap"])
+                    for result in _as_list(item.get("results"))
+                    for p in _as_list((result.get("tables") or {}).get("share_class_profile"))
+                    if isinstance(p, dict) and p.get("market_cap")
+                ]
+                if caps:
+                    out[str(item.get("request", "")).upper()] = max(caps)
+        return out
+
     def _get_beta(self, path: str, params: dict[str, Any]) -> Any:
         # Same host, /beta prefix instead of /v1.
         url = self._client.base_url.copy_with(path="/beta" + path)

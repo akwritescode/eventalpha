@@ -209,3 +209,16 @@ def test_share_class_symbols_between_sec_and_tradier():
 
     assert tradier_symbol("BRK-B") == "BRK/B" and tradier_symbol("AAPL") == "AAPL"
     assert sec_ticker("BRK/B") == "BRK-B" and sec_ticker("BRK.B") == "BRK-B"
+
+
+def test_tradier_market_caps_take_the_live_listing():
+    # Shapes as Tradier returns them: several listings per symbol, most without a profile.
+    body = [
+        {"request": "DIS", "results": [
+            {"type": "Company", "tables": {"company_profile": {}, "share_class_profile": None}},
+            {"type": "Stock", "tables": {"share_class_profile": {"market_cap": 205423940730}}},
+            {"type": "Stock", "tables": {"share_class_profile": None}}]},
+        {"request": "ZZZZQ", "results": [{"type": "Stock", "tables": {"share_class_profile": None}}]},
+    ]
+    md = TradierMarketData("k", transport=transport({"/markets/fundamentals/company": body}))
+    assert md.market_caps(["DIS", "ZZZZQ"]) == {"DIS": 205423940730.0}

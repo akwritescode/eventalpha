@@ -7,14 +7,15 @@ const PAGE = 60;
  * The stream's items for the selected types. Updates are push-driven: every new item is
  * announced on the feed stream (SSE), and each announcement refetches the first page. No polling.
  */
-export function useFeed(types: FeedType[], pushVersion: number) {
+export function useFeed(types: FeedType[], pushVersion: number, ticker: string | null = null) {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [exhausted, setExhausted] = useState(false);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const known = useRef<Set<string>>(new Set());
-  const query = `types=${types.join(',')}&days=30&limit=${PAGE}`;
+  // A single company has fewer items, so its view looks further back.
+  const query = `types=${types.join(',')}&days=${ticker ? 60 : 30}&limit=${PAGE}${ticker ? `&ticker=${encodeURIComponent(ticker)}` : ''}`;
 
   const loadFirst = useCallback(async () => {
     try {
@@ -45,7 +46,7 @@ export function useFeed(types: FeedType[], pushVersion: number) {
     setExhausted(resp.data.length < PAGE);
   }, [items, query]);
 
-  // Type filter changed: start over.
+  // Type or ticker filter changed: start over.
   useEffect(() => {
     known.current = new Set();
     setItems([]);
