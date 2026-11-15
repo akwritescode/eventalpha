@@ -71,7 +71,9 @@ def maintenance():
 
     clean_metadata = BashOperator(
         task_id="clean_airflow_metadata",
+        # Airflow 3 blanks the metadata-DB URL inside tasks; hand the CLI the real one.
         bash_command=(
+            'AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="$AIRFLOW_METADATA_DB_URL" '
             "airflow db clean --clean-before-timestamp "
             "\"$(date -u -d '-{{ params.days }} days' +%Y-%m-%dT%H:%M:%S+00:00)\" --skip-archive --yes"
         ),
