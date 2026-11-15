@@ -30,8 +30,7 @@ def send_telegram(settings: Settings, text: str, ops: bool = False) -> bool:
     try:
         resp = httpx.post(
             f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
-                  "disable_web_page_preview": True},
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
             timeout=10,
         )
     except httpx.HTTPError as exc:  # an alert failure must never fail the task itself

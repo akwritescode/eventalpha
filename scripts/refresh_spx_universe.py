@@ -32,18 +32,76 @@ from eventalpha.signals.universe import tradier_symbol
 
 # (SEC ticker(s), price ticker if different). First ticker is the company's primary one.
 CANDIDATES: list[tuple[list[str], str | None]] = [
-    (["NVDA"], None), (["AAPL"], None), (["MSFT"], None), (["AMZN"], None), (["GOOGL", "GOOG"], None),
-    (["META"], None), (["AVGO"], None), (["TSLA"], None), (["BRK-B"], None), (["JPM"], None),
-    (["LLY"], None), (["V"], None), (["WMT"], None), (["ORCL"], None), (["NFLX"], None), (["XOM"], None),
-    (["MA"], None), (["COST"], None), (["JNJ"], None), (["PLTR"], None), (["HD"], None), (["ABBV"], None),
-    (["BAC"], None), (["AMD"], None), (["PG"], None), (["UNH"], None), (["KO"], None), (["CVX"], None),
-    (["CSCO"], None), (["GE"], None), (["WFC"], None), (["CRM"], None), (["IBM"], None), (["PM"], None),
-    (["MS"], None), (["ABT"], None), (["GS"], None), (["LIN"], None), (["MCD"], None), (["INTU"], None),
-    (["MU"], None), (["AXP"], None), (["NOW"], None), (["T"], None), (["TMO"], None), (["MRK"], None),
-    (["DIS"], None), (["ISRG"], None), (["RTX"], None), (["PEP"], None), (["CAT"], None), (["BX"], None),
-    (["QCOM"], None), (["UBER"], None), (["BKNG"], None), (["VZ"], None), (["AMAT"], None), (["TXN"], None),
-    (["SCHW"], None), (["BLK"], None), (["C"], None), (["SPGI"], None), (["ANET"], None), (["LRCX"], None),
-    (["NEE"], None), (["PGR"], None), (["APP"], None), (["KLAC"], None), (["ADBE"], None), (["GEV"], None),
+    (["NVDA"], None),
+    (["AAPL"], None),
+    (["MSFT"], None),
+    (["AMZN"], None),
+    (["GOOGL", "GOOG"], None),
+    (["META"], None),
+    (["AVGO"], None),
+    (["TSLA"], None),
+    (["BRK-B"], None),
+    (["JPM"], None),
+    (["LLY"], None),
+    (["V"], None),
+    (["WMT"], None),
+    (["ORCL"], None),
+    (["NFLX"], None),
+    (["XOM"], None),
+    (["MA"], None),
+    (["COST"], None),
+    (["JNJ"], None),
+    (["PLTR"], None),
+    (["HD"], None),
+    (["ABBV"], None),
+    (["BAC"], None),
+    (["AMD"], None),
+    (["PG"], None),
+    (["UNH"], None),
+    (["KO"], None),
+    (["CVX"], None),
+    (["CSCO"], None),
+    (["GE"], None),
+    (["WFC"], None),
+    (["CRM"], None),
+    (["IBM"], None),
+    (["PM"], None),
+    (["MS"], None),
+    (["ABT"], None),
+    (["GS"], None),
+    (["LIN"], None),
+    (["MCD"], None),
+    (["INTU"], None),
+    (["MU"], None),
+    (["AXP"], None),
+    (["NOW"], None),
+    (["T"], None),
+    (["TMO"], None),
+    (["MRK"], None),
+    (["DIS"], None),
+    (["ISRG"], None),
+    (["RTX"], None),
+    (["PEP"], None),
+    (["CAT"], None),
+    (["BX"], None),
+    (["QCOM"], None),
+    (["UBER"], None),
+    (["BKNG"], None),
+    (["VZ"], None),
+    (["AMAT"], None),
+    (["TXN"], None),
+    (["SCHW"], None),
+    (["BLK"], None),
+    (["C"], None),
+    (["SPGI"], None),
+    (["ANET"], None),
+    (["LRCX"], None),
+    (["NEE"], None),
+    (["PGR"], None),
+    (["APP"], None),
+    (["KLAC"], None),
+    (["ADBE"], None),
+    (["GEV"], None),
 ]
 FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:0>10}.json"
 SHARE_TAGS = ("WeightedAverageNumberOfDilutedSharesOutstanding", "WeightedAverageNumberOfSharesOutstandingBasic")
@@ -129,10 +187,12 @@ def main() -> int:
     for r in top:
         name = r["name"].replace('"', "'")
         weight = 100 * r["cap"] / total
-        lines.append(f'  - {{name: "{name}", cik: "{r["cik"]}", tickers: [{", ".join(r["tickers"])}], '
-                     f'weight: {weight:.2f}}}  # ${r["cap"] / 1e9:,.0f}B, {r["basis"]}')
+        lines.append(
+            f'  - {{name: "{name}", cik: "{r["cik"]}", tickers: [{", ".join(r["tickers"])}], '
+            f"weight: {weight:.2f}}}  # ${r['cap'] / 1e9:,.0f}B, {r['basis']}"
+        )
     existing = args.out.read_text()
-    context = existing[existing.index("# Market context"):] if "# Market context" in existing else ""
+    context = existing[existing.index("# Market context") :] if "# Market context" in existing else ""
     args.out.write_text("\n".join(lines) + "\n\n" + context)
     print(f"wrote {args.out}: top {len(top)} of {len(rows)} priced candidates; skipped {skipped or 'none'}")
     for r in top[:10]:

@@ -50,9 +50,24 @@ def maintenance():
         key = f"warehouse/{datetime.now(UTC):%Y/%m/%d}/eventalpha-{datetime.now(UTC):%Y%m%dT%H%M%SZ}.dump"
         with tempfile.NamedTemporaryFile(suffix=".dump") as f:
             subprocess.run(
-                ["pg_dump", "-Fc", "-Z", "zstd:6", "-h", conn.host, "-p", str(conn.port or 5432),
-                 "-U", conn.login, "-d", conn.schema, "-f", f.name],
-                env=env, check=True,
+                [
+                    "pg_dump",
+                    "-Fc",
+                    "-Z",
+                    "zstd:6",
+                    "-h",
+                    conn.host,
+                    "-p",
+                    str(conn.port or 5432),
+                    "-U",
+                    conn.login,
+                    "-d",
+                    conn.schema,
+                    "-f",
+                    f.name,
+                ],
+                env=env,
+                check=True,
             )
             s3 = boto3.client("s3")
             s3.upload_file(f.name, bucket, key)
@@ -98,8 +113,9 @@ def maintenance():
         usage = shutil.disk_usage("/opt/airflow/data")
         pct = 100 * usage.used / usage.total
         if pct >= DISK_ALERT_PCT:
-            send_telegram(settings(), f"🟠 <b>EventAlpha disk</b> at {pct:.0f}% "
-                                      f"({usage.free / 1e9:.1f} GB free)", ops=True)
+            send_telegram(
+                settings(), f"🟠 <b>EventAlpha disk</b> at {pct:.0f}% ({usage.free / 1e9:.1f} GB free)", ops=True
+            )
         return round(pct, 1)
 
     backup_warehouse() >> clean_metadata >> prune_logs >> check_disk()

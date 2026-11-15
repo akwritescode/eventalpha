@@ -18,8 +18,15 @@ FORMS = ("8-K", "6-K", "SCHEDULE 13D", "424B5", "424B4", "S-1")
 LOOKBACK = timedelta(hours=3)  # overlap covers missed runs; the ledger makes reprocessing a no-op
 
 
-@dag(schedule="*/15 6-20 * * 1-5", start_date=START_DATE, catchup=False, max_active_runs=1,
-     default_args=DEFAULT_ARGS | {"retries": 1}, tags=["ingest", "sec", "intraday"], doc_md=__doc__)
+@dag(
+    schedule="*/15 6-20 * * 1-5",
+    start_date=START_DATE,
+    catchup=False,
+    max_active_runs=1,
+    default_args=DEFAULT_ARGS | {"retries": 1},
+    tags=["ingest", "sec", "intraday"],
+    doc_md=__doc__,
+)
 def sec_current_filings():
     # Highest priority in the shared SEC pool: these feed the 16:45 and 09:15 alerts.
     @task(pool="sec_edgar", outlets=[ARTICLES], priority_weight=100, weight_rule="absolute")
@@ -44,9 +51,13 @@ def sec_current_filings():
             entries = [e for e in entries if e.form_type in family.forms]
             selected = select_filings(entries, family.forms, set(cik_map))
             with engine().connect() as conn:
-                done = set(conn.execute(select(sec_filings.c.accession)
-                                        .where(sec_filings.c.accession.in_([e.accession for e in selected])))
-                           .scalars())
+                done = set(
+                    conn.execute(
+                        select(sec_filings.c.accession).where(
+                            sec_filings.c.accession.in_([e.accession for e in selected])
+                        )
+                    ).scalars()
+                )
             todo = [e for e in selected if e.accession not in done]
             result = process_batch(family, client, engine(), todo, cik_map) if todo else {"loaded": 0}
         print(f"{len(entries)} in feed, {len(selected)} listed companies, {len(todo)} new → {result}")

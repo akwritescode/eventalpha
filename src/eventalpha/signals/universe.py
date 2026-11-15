@@ -38,6 +38,7 @@ def sec_ticker(tradier: str) -> str:
 
 def load_universe(path: Path) -> Universe:
     data = yaml.safe_load(path.read_text())
-    companies = tuple(Company(c["name"], str(c["cik"]), tuple(c["tickers"]), float(c["weight"]))
-                      for c in data["companies"])
+    companies = tuple(
+        Company(c["name"], str(c["cik"]), tuple(c["tickers"]), float(c["weight"])) for c in data["companies"]
+    )
     return Universe(str(data["as_of"]), companies, dict(data.get("context_symbols", {})))

@@ -5,15 +5,24 @@ import fakeredis
 from eventalpha.event_stream import FEED_STREAM, STREAM, article_feed_items, publish_alerts, publish_feed_items
 
 ARTICLE = {
-    "id": 2, "title": "AAON 8-K: Guidance cut", "tickers": ["AAON"], "form_type": "8-K",
-    "source": "sec_edgar", "url": "https://example.com/2", "published_at": datetime(2026, 11, 13, 21, tzinfo=UTC),
+    "id": 2,
+    "title": "AAON 8-K: Guidance cut",
+    "tickers": ["AAON"],
+    "form_type": "8-K",
+    "source": "sec_edgar",
+    "url": "https://example.com/2",
+    "published_at": datetime(2026, 11, 13, 21, tzinfo=UTC),
 }
 
 
 def score(article_id: int, materiality: float, company_specific: float = 0.95) -> dict:
     return {
-        "article_id": article_id, "sentiment": "bearish", "sentiment_score": -0.85, "materiality": materiality,
-        "company_specific": company_specific, "model": "typesafe:jev-1.14.0",
+        "article_id": article_id,
+        "sentiment": "bearish",
+        "sentiment_score": -0.85,
+        "materiality": materiality,
+        "company_specific": company_specific,
+        "model": "typesafe:jev-1.14.0",
         "events": {"guidance_lowered": 0.95, "earnings_results": 0.8, "m_and_a": 0.01},
     }
 

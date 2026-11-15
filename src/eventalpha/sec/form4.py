@@ -91,9 +91,7 @@ def parse_form4(entry: IndexEntry, sub: Submission) -> list[dict[str, Any]]:
                     "shares": _num(_val(tx, "transactionAmounts/transactionShares")),
                     "price": _num(_val(tx, "transactionAmounts/transactionPricePerShare")),
                     "acquired_disposed": _val(tx, "transactionAmounts/transactionAcquiredDisposedCode"),
-                    "shares_owned_after": _num(
-                        _val(tx, "postTransactionAmounts/sharesOwnedFollowingTransaction")
-                    ),
+                    "shares_owned_after": _num(_val(tx, "postTransactionAmounts/sharesOwnedFollowingTransaction")),
                     "ownership": _val(tx, "ownershipNature/directOrIndirectOwnership"),
                 }
             )

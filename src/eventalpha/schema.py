@@ -164,8 +164,9 @@ institutional_filings = Table(
 institutional_holdings = Table(
     "institutional_holdings",
     metadata,
-    Column("accession", String(25), ForeignKey("institutional_filings.accession", ondelete="CASCADE"),
-           primary_key=True),
+    Column(
+        "accession", String(25), ForeignKey("institutional_filings.accession", ondelete="CASCADE"), primary_key=True
+    ),
     Column("row_no", Integer, primary_key=True),
     Column("cusip", String(9), nullable=False),
     Column("issuer_name", Text),
@@ -212,8 +213,15 @@ financial_facts = Table(
     Column("form_type", String(8)),
     Column("frame", String(16)),  # CY2026Q3 etc., set by SEC when the fact is the canonical one
     # NULLS NOT DISTINCT (Postgres 15+): instant facts have no start date but are still unique.
-    UniqueConstraint("accession", "concept", "unit", "period_start", "period_end",
-                     name="uq_financial_facts_fact", postgresql_nulls_not_distinct=True),
+    UniqueConstraint(
+        "accession",
+        "concept",
+        "unit",
+        "period_start",
+        "period_end",
+        name="uq_financial_facts_fact",
+        postgresql_nulls_not_distinct=True,
+    ),
     Index("ix_financial_facts_cik_concept", "cik", "concept", "period_end"),
 )
 

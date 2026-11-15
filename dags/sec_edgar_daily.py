@@ -86,13 +86,19 @@ def build(family: Family):
                 entries = fetch_daily_index(client, day) or []
             filings = select_filings(entries, family.forms, set(cik_map) if family.universe_only else None)
             records = [f.to_dict() for f in filings]
-            write_jsonl(settings().raw_data_dir, f"sec_index_{family.name}", day, "index", records,
-                        bucket=settings().raw_bucket)
+            write_jsonl(
+                settings().raw_data_dir, f"sec_index_{family.name}", day, "index", records, bucket=settings().raw_bucket
+            )
             print(f"{len(entries)} filings on {d}; {len(filings)} in family {family.name}")
             return chunk(records, family.batch_size)
 
-        @task(pool="sec_edgar", max_active_tis_per_dagrun=2, execution_timeout=timedelta(minutes=45),
-              priority_weight=family.priority, weight_rule="absolute")
+        @task(
+            pool="sec_edgar",
+            max_active_tis_per_dagrun=2,
+            execution_timeout=timedelta(minutes=45),
+            priority_weight=family.priority,
+            weight_rule="absolute",
+        )
         def fetch(batch: list[dict]) -> dict:
             from eventalpha.db import load_cik_map
             from eventalpha.sec.families import process_batch

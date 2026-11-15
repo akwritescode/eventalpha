@@ -38,8 +38,19 @@ def upsert_articles(engine: Engine, items: Sequence[Article]) -> dict[str, int]:
         constraint="uq_articles_source_source_id",
         set_={
             c: excluded[c]
-            for c in ("form_type", "url", "title", "summary", "body", "company", "cik", "tickers",
-                      "sec_items", "published_at", "content_hash")
+            for c in (
+                "form_type",
+                "url",
+                "title",
+                "summary",
+                "body",
+                "company",
+                "cik",
+                "tickers",
+                "sec_items",
+                "published_at",
+                "content_hash",
+            )
         }
         | {"updated_at": func.now()},
         where=articles.c.content_hash != excluded.content_hash,
@@ -57,8 +68,12 @@ def upsert_ticker_universe(engine: Engine, rows: Iterable[dict[str, str]]) -> in
     stmt = insert(ticker_universe).values(rows)
     stmt = stmt.on_conflict_do_update(
         index_elements=["ticker"],
-        set_={"cik": stmt.excluded.cik, "name": stmt.excluded.name, "size_rank": stmt.excluded.size_rank,
-              "updated_at": func.now()},
+        set_={
+            "cik": stmt.excluded.cik,
+            "name": stmt.excluded.name,
+            "size_rank": stmt.excluded.size_rank,
+            "updated_at": func.now(),
+        },
     )
     with engine.begin() as conn:
         conn.execute(stmt)
@@ -83,10 +98,7 @@ def select_unscored_ids(engine: Engine, model: str, questions_version: str, limi
         .where(article_scores.c.questions_version == questions_version)
     )
     stmt = (
-        select(articles.c.id)
-        .where(articles.c.id.not_in(scored))
-        .order_by(articles.c.published_at.desc())
-        .limit(limit)
+        select(articles.c.id).where(articles.c.id.not_in(scored)).order_by(articles.c.published_at.desc()).limit(limit)
     )
     with engine.connect() as conn:
         return [r.id for r in conn.execute(stmt)]
@@ -171,9 +183,7 @@ def replace_by_accession(
     return len(rows)
 
 
-def record_filings(
-    engine: Engine, family: str, entries: Sequence[IndexEntry], outcomes: Mapping[str, Outcome]
-) -> None:
+def record_filings(engine: Engine, family: str, entries: Sequence[IndexEntry], outcomes: Mapping[str, Outcome]) -> None:
     rows = [
         {
             "accession": e.accession,

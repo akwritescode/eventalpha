@@ -32,9 +32,7 @@ class FeedResult:
     entries: list[Any] = field(default_factory=list)
 
 
-def fetch_feed(
-    client: httpx.Client, url: str, etag: str | None = None, last_modified: str | None = None
-) -> FeedResult:
+def fetch_feed(client: httpx.Client, url: str, etag: str | None = None, last_modified: str | None = None) -> FeedResult:
     headers = {}
     if etag:
         headers["If-None-Match"] = etag

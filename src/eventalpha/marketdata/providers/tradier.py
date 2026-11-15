@@ -43,8 +43,13 @@ def _hhmm(v: str | None) -> time | None:
 class TradierMarketData:
     name = "tradier"
 
-    def __init__(self, api_key: str | None, base_url: str = BASE_URL, timeout: float = 15.0,
-                 transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None,
+        base_url: str = BASE_URL,
+        timeout: float = 15.0,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
         headers = {"Accept": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -75,21 +80,25 @@ class TradierMarketData:
         out = []
         for q in _as_list((data.get("quotes") or {}).get("quote")):
             trade_ms = q.get("trade_date")
-            out.append(Quote(
-                symbol=q.get("symbol", ""),
-                last=_dec(q.get("last")),
-                bid=_dec(q.get("bid")),
-                ask=_dec(q.get("ask")),
-                prev_close=_dec(q.get("prevclose")),
-                change_pct=_dec(q.get("change_percentage")),
-                volume=q.get("volume"),
-                trade_date=date.fromtimestamp(trade_ms / 1000) if trade_ms else None,
-            ))
+            out.append(
+                Quote(
+                    symbol=q.get("symbol", ""),
+                    last=_dec(q.get("last")),
+                    bid=_dec(q.get("bid")),
+                    ask=_dec(q.get("ask")),
+                    prev_close=_dec(q.get("prevclose")),
+                    change_pct=_dec(q.get("change_percentage")),
+                    volume=q.get("volume"),
+                    trade_date=date.fromtimestamp(trade_ms / 1000) if trade_ms else None,
+                )
+            )
         return out
 
     def daily_bars(self, symbol: str, start: date, end: date) -> list[DailyBar]:
-        data = self._get("/markets/history", {"symbol": symbol, "interval": "daily",
-                                              "start": start.isoformat(), "end": end.isoformat()})
+        data = self._get(
+            "/markets/history",
+            {"symbol": symbol, "interval": "daily", "start": start.isoformat(), "end": end.isoformat()},
+        )
         history = data.get("history")
         days = _as_list(history.get("day")) if isinstance(history, dict) else []
         bars = []
@@ -107,13 +116,15 @@ class TradierMarketData:
         out = []
         for d in days:
             session = d.get("open") or {}
-            out.append(SessionDay(
-                day=date.fromisoformat(d["date"]),
-                is_open=d.get("status") == "open",
-                open_time=_hhmm(session.get("start")),
-                close_time=_hhmm(session.get("end")),
-                description=d.get("description", ""),
-            ))
+            out.append(
+                SessionDay(
+                    day=date.fromisoformat(d["date"]),
+                    is_open=d.get("status") == "open",
+                    open_time=_hhmm(session.get("start")),
+                    close_time=_hhmm(session.get("end")),
+                    description=d.get("description", ""),
+                )
+            )
         return out
 
     def earnings_events(self, symbols: list[str], start: date, end: date) -> list[EarningsEvent]:
@@ -132,8 +143,11 @@ class TradierMarketData:
                             continue  # skip calls, AGMs, annual reports
                         day = date.fromisoformat(e["begin_date_time"][:10])
                         if start <= day <= end:
-                            out.append(EarningsEvent(ticker, day, text, e.get("event_status") or "",
-                                                     e.get("event_fiscal_year")))
+                            out.append(
+                                EarningsEvent(
+                                    ticker, day, text, e.get("event_status") or "", e.get("event_fiscal_year")
+                                )
+                            )
         return out
 
     def market_caps(self, symbols: list[str]) -> dict[str, float]:

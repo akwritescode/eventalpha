@@ -18,8 +18,14 @@ LOOKAHEAD_DAYS = 45
 LOOKBACK_DAYS = 30  # keep recent releases too: the web stream shows them with their actual values
 
 
-@dag(schedule="0 6 * * 1-5", start_date=START_DATE, catchup=False, default_args=DEFAULT_ARGS,
-     tags=["reference", "macro", "earnings"], doc_md=__doc__)
+@dag(
+    schedule="0 6 * * 1-5",
+    start_date=START_DATE,
+    catchup=False,
+    default_args=DEFAULT_ARGS,
+    tags=["reference", "macro", "earnings"],
+    doc_md=__doc__,
+)
 def calendars_daily():
     @task(outlets=[table_asset("econ_events")])
     def econ_calendar() -> int:
@@ -54,12 +60,19 @@ def calendars_daily():
 
         today = pendulum.now(NY).date()
         with engine().connect() as conn:
-            news = conn.execute(text("""SELECT DISTINCT unnest(tickers) FROM articles
-                                        WHERE published_at > now() - interval '30 days'""")).scalars().all()
+            news = (
+                conn.execute(
+                    text("""SELECT DISTINCT unnest(tickers) FROM articles
+                                        WHERE published_at > now() - interval '30 days'""")
+                )
+                .scalars()
+                .all()
+            )
         tickers = sorted({t for c in universe().companies for t in c.tickers} | set(news))
         provider = market_data()
-        events = provider.earnings_events([tradier_symbol(t) for t in tickers], today,
-                                          today + timedelta(days=LOOKAHEAD_DAYS))
+        events = provider.earnings_events(
+            [tradier_symbol(t) for t in tickers], today, today + timedelta(days=LOOKAHEAD_DAYS)
+        )
         rows = earnings_rows(events, provider.name)
         caps = provider.market_caps(sorted({r["ticker"] for r in rows}))  # orders the calendar
         for r in rows:  # store tickers the way SEC spells them, to join with articles

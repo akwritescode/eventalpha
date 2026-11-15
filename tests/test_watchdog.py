@@ -35,8 +35,13 @@ def test_failed_telegram_send_never_logs_the_bot_token(monkeypatch, caplog):
     from eventalpha import alerts
 
     token = "123456:SECRET-TOKEN"
-    monkeypatch.setattr(alerts.httpx, "post", lambda url, **kw: httpx.Response(
-        400, json={"description": "Bad Request: chat not found"}, request=httpx.Request("POST", url)))
+    monkeypatch.setattr(
+        alerts.httpx,
+        "post",
+        lambda url, **kw: httpx.Response(
+            400, json={"description": "Bad Request: chat not found"}, request=httpx.Request("POST", url)
+        ),
+    )
     s = SimpleNamespace(telegram_bot_token=token, telegram_ops_chat_id="-100", telegram_chat_id=None)
     assert alerts.send_telegram(s, "hi", ops=True) is False
     assert "chat not found" in caplog.text and token not in caplog.text

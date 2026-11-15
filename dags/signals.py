@@ -56,15 +56,32 @@ def _publish(signal) -> dict:
 
         title = "SPX overnight signal" if signal.signal_type == "spx_overnight" else "Premarket signal"
         with redis.Redis.from_url(settings().redis_url, decode_responses=True) as r:
-            publish_feed_items(r, [feed_fields("signal", f"signal:{signal.signal_type}:{signal.session_date}",
-                                               title, impact="high", label="TRADING SIGNAL",
-                                               occurred_at=signal.generated_at.isoformat())])
+            publish_feed_items(
+                r,
+                [
+                    feed_fields(
+                        "signal",
+                        f"signal:{signal.signal_type}:{signal.session_date}",
+                        title,
+                        impact="high",
+                        label="TRADING SIGNAL",
+                        occurred_at=signal.generated_at.isoformat(),
+                    )
+                ],
+            )
     return {"score": signal.score, "confidence": signal.confidence}
 
 
-@dag(schedule=MultipleCronTriggerTimetable("45 13 * * 1-5", "45 16 * * 1-5", timezone=NY), start_date=START_DATE,
-     catchup=False, max_active_runs=1, default_args=DEFAULT_ARGS | {"retries": 1, "retry_delay": timedelta(minutes=1)},
-     params=PARAMS, tags=["signal"], doc_md=__doc__)
+@dag(
+    schedule=MultipleCronTriggerTimetable("45 13 * * 1-5", "45 16 * * 1-5", timezone=NY),
+    start_date=START_DATE,
+    catchup=False,
+    max_active_runs=1,
+    default_args=DEFAULT_ARGS | {"retries": 1, "retry_delay": timedelta(minutes=1)},
+    params=PARAMS,
+    tags=["signal"],
+    doc_md=__doc__,
+)
 def signal_spx_overnight():
     @task.short_circuit
     def due_now(**context) -> bool:
@@ -81,17 +98,25 @@ def signal_spx_overnight():
         prev = previous_session(engine(), now.date())
         window_start = session_close_at(prev) + SPX_OFFSET if prev else now - timedelta(days=1)
         with engine().connect() as conn:
-            nxt = conn.execute(text("SELECT min(day) FROM market_sessions WHERE day > :d AND is_open"),
-                               {"d": now.date()}).scalar()
+            nxt = conn.execute(
+                text("SELECT min(day) FROM market_sessions WHERE day > :d AND is_open"), {"d": now.date()}
+            ).scalar()
         assert get_session(engine(), now.date()) is not None
         return _publish(build_spx_overnight(engine(), universe(), now.date(), window_start, now, nxt))
 
     due_now() >> build_and_send()
 
 
-@dag(schedule="15 9 * * 1-5", start_date=START_DATE, catchup=False, max_active_runs=1,
-     default_args=DEFAULT_ARGS | {"retries": 1, "retry_delay": timedelta(minutes=1)},
-     params=PARAMS, tags=["signal"], doc_md=__doc__)
+@dag(
+    schedule="15 9 * * 1-5",
+    start_date=START_DATE,
+    catchup=False,
+    max_active_runs=1,
+    default_args=DEFAULT_ARGS | {"retries": 1, "retry_delay": timedelta(minutes=1)},
+    params=PARAMS,
+    tags=["signal"],
+    doc_md=__doc__,
+)
 def signal_premarket():
     @task.short_circuit
     def is_trading_day(**context) -> bool:

@@ -36,9 +36,26 @@ FRED_IMPORTANCE: dict[str, str] = {
     "ADP National Employment Report": "medium",
 }
 FOMC_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
-_MONTHS = {m: i for i, m in enumerate(
-    ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
-     "november", "december"], start=1)}
+_MONTHS = {
+    m: i
+    for i, m in enumerate(
+        [
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
+        ],
+        start=1,
+    )
+}
 
 
 def _key(*parts: str) -> str:
@@ -50,8 +67,16 @@ def bls_event_rows(releases: list[ScheduledRelease], start: date, end: date) -> 
     for r in releases:
         importance = next((v for k, v in BLS_IMPORTANCE.items() if r.title.startswith(k)), None)
         if importance and start <= r.at.date() <= end:
-            rows.append({"source": "bls", "event_key": _key(r.title, r.at.isoformat()), "title": r.title,
-                         "event_date": r.at.date(), "scheduled_at": r.at, "importance": importance})
+            rows.append(
+                {
+                    "source": "bls",
+                    "event_key": _key(r.title, r.at.isoformat()),
+                    "title": r.title,
+                    "event_date": r.at.date(),
+                    "scheduled_at": r.at,
+                    "importance": importance,
+                }
+            )
     return rows
 
 
@@ -60,8 +85,16 @@ def fred_event_rows(releases: list[ReleaseDate]) -> list[dict[str, Any]]:
     for r in releases:
         importance = FRED_IMPORTANCE.get(r.name)
         if importance:
-            rows.append({"source": "fred", "event_key": _key(str(r.release_id), r.day.isoformat()),
-                         "title": r.name, "event_date": r.day, "scheduled_at": None, "importance": importance})
+            rows.append(
+                {
+                    "source": "fred",
+                    "event_key": _key(str(r.release_id), r.day.isoformat()),
+                    "title": r.name,
+                    "event_date": r.day,
+                    "scheduled_at": None,
+                    "importance": importance,
+                }
+            )
     return rows
 
 
@@ -100,8 +133,16 @@ def fomc_event_rows(html: str, start: date, end: date) -> list[dict[str, Any]]:
             at = datetime(year, month, last_day, 14, 0, tzinfo=ZoneInfo("America/New_York"))
             if start <= at.date() <= end:
                 title = "FOMC rate decision" + (" + projections" if days.group(3) else "")
-                rows.append({"source": "fed", "event_key": _key(title, at.date().isoformat()), "title": title,
-                             "event_date": at.date(), "scheduled_at": at, "importance": "high"})
+                rows.append(
+                    {
+                        "source": "fed",
+                        "event_key": _key(title, at.date().isoformat()),
+                        "title": title,
+                        "event_date": at.date(),
+                        "scheduled_at": at,
+                        "importance": "high",
+                    }
+                )
     return rows
 
 
@@ -109,8 +150,17 @@ def earnings_rows(events: list[EarningsEvent], source: str) -> list[dict[str, An
     """One row per (ticker, date). A confirmed date drops estimated ones within a week of it."""
     seen: dict[tuple[str, date], dict[str, Any]] = {}
     for e in events:
-        seen[(e.ticker, e.day)] = {"ticker": e.ticker, "event_date": e.day, "description": e.description,
-                                   "status": e.status, "fiscal_year": e.fiscal_year, "source": source}
+        seen[(e.ticker, e.day)] = {
+            "ticker": e.ticker,
+            "event_date": e.day,
+            "description": e.description,
+            "status": e.status,
+            "fiscal_year": e.fiscal_year,
+            "source": source,
+        }
     confirmed = {(t, d) for (t, d), r in seen.items() if r["status"] == "Confirmed"}
-    return [r for (t, d), r in seen.items()
-            if r["status"] == "Confirmed" or not any(t == ct and abs((d - cd).days) <= 7 for ct, cd in confirmed)]
+    return [
+        r
+        for (t, d), r in seen.items()
+        if r["status"] == "Confirmed" or not any(t == ct and abs((d - cd).days) <= 7 for ct, cd in confirmed)
+    ]

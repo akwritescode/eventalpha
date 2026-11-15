@@ -43,14 +43,34 @@ def _store(kind: str, context) -> int:
 
     session_date = scheduled_local_time(context).date()
     now = pendulum.now(NY)
-    rows = [{"session_date": session_date, "kind": kind, "symbol": q.symbol, "captured_at": now, "last": q.last,
-             "prev_close": q.prev_close, "change_pct": q.change_pct, "bid": q.bid, "ask": q.ask,
-             "volume": q.volume, "trade_date": q.trade_date} for q in market_data().quotes(_symbols())]
+    rows = [
+        {
+            "session_date": session_date,
+            "kind": kind,
+            "symbol": q.symbol,
+            "captured_at": now,
+            "last": q.last,
+            "prev_close": q.prev_close,
+            "change_pct": q.change_pct,
+            "bid": q.bid,
+            "ask": q.ask,
+            "volume": q.volume,
+            "trade_date": q.trade_date,
+        }
+        for q in market_data().quotes(_symbols())
+    ]
     return upsert_rows(engine(), "market_snapshots", rows, key=["session_date", "kind", "symbol"])
 
 
-@dag(schedule="10 9 * * 1-5", start_date=START_DATE, catchup=False, default_args=DEFAULT_ARGS,
-     params={"force": Param(False, type="boolean")}, tags=["market"], doc_md=__doc__)
+@dag(
+    schedule="10 9 * * 1-5",
+    start_date=START_DATE,
+    catchup=False,
+    default_args=DEFAULT_ARGS,
+    params={"force": Param(False, type="boolean")},
+    tags=["market"],
+    doc_md=__doc__,
+)
 def market_snapshot_premarket():
     @task.short_circuit
     def is_trading_day(**context) -> bool:
@@ -63,9 +83,15 @@ def market_snapshot_premarket():
     is_trading_day() >> snapshot()
 
 
-@dag(schedule=MultipleCronTriggerTimetable("35 13 * * 1-5", "35 16 * * 1-5", timezone=NY), start_date=START_DATE,
-     catchup=False, default_args=DEFAULT_ARGS, params={"force": Param(False, type="boolean")},
-     tags=["market"], doc_md=__doc__)
+@dag(
+    schedule=MultipleCronTriggerTimetable("35 13 * * 1-5", "35 16 * * 1-5", timezone=NY),
+    start_date=START_DATE,
+    catchup=False,
+    default_args=DEFAULT_ARGS,
+    params={"force": Param(False, type="boolean")},
+    tags=["market"],
+    doc_md=__doc__,
+)
 def market_snapshot_close():
     @task.short_circuit
     def due_now(**context) -> bool:
@@ -81,9 +107,20 @@ def market_snapshot_close():
 
         day = scheduled_local_time(context).date()
         provider = market_data()
-        rows = [{"symbol": b.symbol, "day": b.day, "open": b.open, "high": b.high, "low": b.low, "close": b.close,
-                 "volume": b.volume, "source": provider.name}
-                for sym in _symbols() for b in provider.daily_bars(sym, day - timedelta(days=7), day)]
+        rows = [
+            {
+                "symbol": b.symbol,
+                "day": b.day,
+                "open": b.open,
+                "high": b.high,
+                "low": b.low,
+                "close": b.close,
+                "volume": b.volume,
+                "source": provider.name,
+            }
+            for sym in _symbols()
+            for b in provider.daily_bars(sym, day - timedelta(days=7), day)
+        ]
         return upsert_rows(engine(), "price_bars_daily", rows, key=["symbol", "day"])
 
     due_now() >> [snapshot(), daily_bars()]

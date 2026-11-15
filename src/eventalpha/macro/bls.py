@@ -52,8 +52,9 @@ class ScheduledRelease:
 
 
 class BlsClient:
-    def __init__(self, api_key: str | None, user_agent: str, timeout: float = 30.0,
-                 transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self, api_key: str | None, user_agent: str, timeout: float = 30.0, transport: httpx.BaseTransport | None = None
+    ) -> None:
         self._key = api_key
         self._client = httpx.Client(timeout=timeout, transport=transport, headers={"User-Agent": user_agent})
 

@@ -169,7 +169,14 @@ def cpi_surprises(engine: Engine, before: date) -> list[dict[str, Any]]:
         with engine.connect() as conn:
             nc = conn.execute(sql, {"m": measure, "p": period, "before": before}).first()
         if nc and nc.value is not None:
-            out.append({"measure": measure, "period": period, "actual_mom": round(mom, 3),
-                        "nowcast_mom": round(float(nc.value), 3), "nowcast_vintage": nc.vintage.isoformat(),
-                        "surprise": round(mom - float(nc.value), 3)})
+            out.append(
+                {
+                    "measure": measure,
+                    "period": period,
+                    "actual_mom": round(mom, 3),
+                    "nowcast_mom": round(float(nc.value), 3),
+                    "nowcast_vintage": nc.vintage.isoformat(),
+                    "surprise": round(mom - float(nc.value), 3),
+                }
+            )
     return out

@@ -16,9 +16,16 @@ from eventalpha.classification.base import ChoiceAnswer, ScaleAnswer
 from eventalpha.classification.providers import typesafe
 
 ARTICLE = {
-    "id": 7, "source": "sec_edgar", "company": "AAON, INC.", "tickers": ["AAON"], "sec_items": ["2.02"],
-    "form_type": "8-K", "published_at": datetime(2026, 11, 13, 21, 0, tzinfo=UTC), "title": "AAON 8-K",
-    "summary": None, "body": "Record revenue.",
+    "id": 7,
+    "source": "sec_edgar",
+    "company": "AAON, INC.",
+    "tickers": ["AAON"],
+    "sec_items": ["2.02"],
+    "form_type": "8-K",
+    "published_at": datetime(2026, 11, 13, 21, 0, tzinfo=UTC),
+    "title": "AAON 8-K",
+    "summary": None,
+    "body": "Record revenue.",
 }
 
 
@@ -78,8 +85,13 @@ def test_typesafe_adapter_maps_questions_and_answers():
             return SimpleNamespace(
                 model="jev-1.14.0",
                 usage=SimpleNamespace(input_tokens=100),
-                choices={"sentiment": SimpleNamespace(choice="bearish", confidence=0.8,
-                                                      probabilities={"bullish": 0.05, "bearish": 0.9, "neutral": 0.05})},
+                choices={
+                    "sentiment": SimpleNamespace(
+                        choice="bearish",
+                        confidence=0.8,
+                        probabilities={"bullish": 0.05, "bearish": 0.9, "neutral": 0.05},
+                    )
+                },
                 scores={"materiality": SimpleNamespace(score=2.8, confidence=0.7)},
                 nouls=nouls,
             )

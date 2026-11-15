@@ -15,12 +15,25 @@ def transport(routes: dict[str, dict]):
             if request.url.path.endswith(path):
                 return httpx.Response(200, json=body)
         return httpx.Response(404)
+
     return httpx.MockTransport(handler)
 
 
 def test_tradier_quote_single_object_and_list():
-    one = {"quotes": {"quote": {"symbol": "SPX", "last": 6812.4, "bid": None, "ask": None, "prevclose": 6790.1,
-                                "change_percentage": 0.33, "volume": 0, "trade_date": 1794690000000}}}
+    one = {
+        "quotes": {
+            "quote": {
+                "symbol": "SPX",
+                "last": 6812.4,
+                "bid": None,
+                "ask": None,
+                "prevclose": 6790.1,
+                "change_percentage": 0.33,
+                "volume": 0,
+                "trade_date": 1794690000000,
+            }
+        }
+    }
     md = TradierMarketData("k", transport=transport({"/markets/quotes": one}))
     [q] = md.quotes(["SPX"])
     assert q.symbol == "SPX" and q.last == Decimal("6812.4") and q.prev_close == Decimal("6790.1")
@@ -28,10 +41,14 @@ def test_tradier_quote_single_object_and_list():
 
 
 def test_tradier_history_skips_incomplete_bars_and_null():
-    body = {"history": {"day": [
-        {"date": "2026-11-12", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 100},
-        {"date": "2026-11-13", "open": 1.5, "high": None, "low": 1, "close": 1.2, "volume": 50},
-    ]}}
+    body = {
+        "history": {
+            "day": [
+                {"date": "2026-11-12", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 100},
+                {"date": "2026-11-13", "open": 1.5, "high": None, "low": 1, "close": 1.2, "volume": 50},
+            ]
+        }
+    }
     md = TradierMarketData("k", transport=transport({"/markets/history": body}))
     bars = md.daily_bars("SPY", date(2026, 11, 12), date(2026, 11, 13))
     assert [b.day for b in bars] == [date(2026, 11, 12)]
@@ -40,11 +57,21 @@ def test_tradier_history_skips_incomplete_bars_and_null():
 
 
 def test_tradier_calendar_marks_early_close():
-    body = {"calendar": {"days": {"day": [
-        {"date": "2026-11-26", "status": "closed", "description": "Market is closed for Thanksgiving Day"},
-        {"date": "2026-11-27", "status": "open", "description": "Market closes early at 13:00",
-         "open": {"start": "09:30", "end": "13:00"}},
-    ]}}}
+    body = {
+        "calendar": {
+            "days": {
+                "day": [
+                    {"date": "2026-11-26", "status": "closed", "description": "Market is closed for Thanksgiving Day"},
+                    {
+                        "date": "2026-11-27",
+                        "status": "open",
+                        "description": "Market closes early at 13:00",
+                        "open": {"start": "09:30", "end": "13:00"},
+                    },
+                ]
+            }
+        }
+    }
     md = TradierMarketData(None, transport=transport({"/markets/calendar": body}))
     holiday, half = md.session_calendar(2026, 11)
     assert not holiday.is_open and half.is_open and half.is_early_close and half.close_time == time(13, 0)
@@ -57,10 +84,12 @@ def test_tradier_requires_key_for_prices():
 
 def test_fred_missing_values_and_release_dates():
     routes = {
-        "/series/observations": {"observations": [{"date": "2026-11-12", "value": "4.12"},
-                                                  {"date": "2026-11-11", "value": "."}]},
-        "/releases/dates": {"release_dates": [{"release_id": 10, "release_name": "Consumer Price Index",
-                                               "date": "2026-12-10"}]},
+        "/series/observations": {
+            "observations": [{"date": "2026-11-12", "value": "4.12"}, {"date": "2026-11-11", "value": "."}]
+        },
+        "/releases/dates": {
+            "release_dates": [{"release_id": 10, "release_name": "Consumer Price Index", "date": "2026-12-10"}]
+        },
     }
     client = fred.FredClient("k", transport=transport(routes))
     obs = client.observations("DGS10", date(2026, 11, 11))
@@ -92,14 +121,31 @@ def test_bls_calendar_and_series():
         ("Producer Price Index", "2026-11-17T08:30:00-05:00"),
         ("Employment Situation, November", "2026-12-04T08:30:00-05:00"),
     ]
-    body = {"status": "REQUEST_SUCCEEDED", "Results": {"series": [{"seriesID": "CUUR0000SA0", "data": [
-        {"year": "2026", "period": "M10", "value": "337.511", "footnotes": [{"code": "P", "text": "preliminary"}]},
-        {"year": "2026", "period": "M09", "value": "336.940", "footnotes": [{}]},
-    ]}]}}
+    body = {
+        "status": "REQUEST_SUCCEEDED",
+        "Results": {
+            "series": [
+                {
+                    "seriesID": "CUUR0000SA0",
+                    "data": [
+                        {
+                            "year": "2026",
+                            "period": "M10",
+                            "value": "337.511",
+                            "footnotes": [{"code": "P", "text": "preliminary"}],
+                        },
+                        {"year": "2026", "period": "M09", "value": "336.940", "footnotes": [{}]},
+                    ],
+                }
+            ]
+        },
+    }
     client = bls.BlsClient(None, "test", transport=transport({"/timeseries/data/": body}))
     obs = client.series(["CUUR0000SA0"], 2026, 2026)
     assert [(o.period, o.value, o.preliminary) for o in obs] == [
-        ("M10", Decimal("337.511"), True), ("M09", Decimal("336.940"), False)]
+        ("M10", Decimal("337.511"), True),
+        ("M09", Decimal("336.940"), False),
+    ]
 
 
 # ---------- calendars, nowcasts, sessions, intraday SEC ----------
@@ -127,11 +173,21 @@ def test_nowcast_vintages_cross_year_and_quarters():
     assert vintage_date("12/30", "2026-12") == date(2026, 12, 30)
     assert vintage_date("01/12", "2026-12") == date(2027, 1, 12)
     assert vintage_date("02/03", "2026:Q4") == date(2027, 2, 3)
-    chart = {"chart": {"subcaption": "2026-10"}, "categories": [{"category": [{"label": "11/04"}, {"label": "CPI Oct"}]}],
-             "dataset": [{"seriesname": "CPI Inflation", "data": [{"value": "0.242"}, {"value": ""}]},
-                         {"seriesname": "Actual CPI Inflation", "data": [{"value": ""}, {"value": "0.35"}]}]}
+    chart = {
+        "chart": {"subcaption": "2026-10"},
+        "categories": [{"category": [{"label": "11/04"}, {"label": "CPI Oct"}]}],
+        "dataset": [
+            {"seriesname": "CPI Inflation", "data": [{"value": "0.242"}, {"value": ""}]},
+            {"seriesname": "Actual CPI Inflation", "data": [{"value": ""}, {"value": "0.35"}]},
+        ],
+    }
     [row] = parse_charts("mom", [chart])
-    assert (row["measure"], row["vintage"], row["value"], row["actual"]) == ("cpi", date(2026, 11, 4), Decimal("0.242"), Decimal("0.35"))
+    assert (row["measure"], row["vintage"], row["value"], row["actual"]) == (
+        "cpi",
+        date(2026, 11, 4),
+        Decimal("0.242"),
+        Decimal("0.35"),
+    )
 
 
 FOMC_HTML = """<div class="panel panel-default"><div class="panel-heading"><h4>2026 FOMC Meetings</h4></div>
@@ -144,19 +200,31 @@ FOMC_HTML = """<div class="panel panel-default"><div class="panel-heading"><h4>2
 def test_fomc_parser_handles_projections_and_month_spans():
     rows = fomc_event_rows(FOMC_HTML, date(2026, 1, 1), date(2026, 12, 31))
     got = {(r["event_date"], r["title"], r["scheduled_at"].hour) for r in rows}
-    assert got == {(date(2026, 12, 9), "FOMC rate decision + projections", 14), (date(2026, 5, 1), "FOMC rate decision", 14)}
+    assert got == {
+        (date(2026, 12, 9), "FOMC rate decision + projections", 14),
+        (date(2026, 5, 1), "FOMC rate decision", 14),
+    }
 
 
 def test_fred_events_exact_names_only():
-    rows = fred_event_rows([ReleaseDate(53, "Gross Domestic Product", date(2026, 11, 25)),
-                            ReleaseDate(999, "Debt to Gross Domestic Product Ratios", date(2026, 11, 25))])
+    rows = fred_event_rows(
+        [
+            ReleaseDate(53, "Gross Domestic Product", date(2026, 11, 25)),
+            ReleaseDate(999, "Debt to Gross Domestic Product Ratios", date(2026, 11, 25)),
+        ]
+    )
     assert [r["title"] for r in rows] == ["Gross Domestic Product"]
 
 
 def test_confirmed_earnings_date_drops_nearby_estimate():
-    rows = earnings_rows([EarningsEvent("HD", date(2026, 11, 17), "Q3 Result", "Confirmed", 2026),
-                          EarningsEvent("HD", date(2026, 11, 18), "Q3 Results", "Estimated", 2026),
-                          EarningsEvent("HD", date(2027, 2, 23), "Q4 Results", "Estimated", 2026)], "tradier")
+    rows = earnings_rows(
+        [
+            EarningsEvent("HD", date(2026, 11, 17), "Q3 Result", "Confirmed", 2026),
+            EarningsEvent("HD", date(2026, 11, 18), "Q3 Results", "Estimated", 2026),
+            EarningsEvent("HD", date(2027, 2, 23), "Q4 Results", "Estimated", 2026),
+        ],
+        "tradier",
+    )
     assert sorted(r["event_date"] for r in rows) == [date(2026, 11, 17), date(2027, 2, 23)]
 
 
@@ -187,13 +255,41 @@ def test_current_feed_becomes_index_entries():
 
 def test_tradier_earnings_handles_single_event_objects():
     body = [
-        {"request": "NVDA", "results": [{"tables": {"corporate_calendars": [
-            {"begin_date_time": "2026-11-17", "event": "NVIDIA Corp Third Quarter Earnings Result for 2027",
-             "event_status": "Confirmed", "event_fiscal_year": 2027},
-            {"begin_date_time": "2026-11-17", "event": "NVIDIA Corp Q3 Earnings Conference Call",
-             "event_status": "Confirmed", "event_fiscal_year": 2027}]}}]},
-        {"request": "AXREF", "results": {"tables": {"corporate_calendars":
-            {"begin_date_time": "2012-09-27", "event": "AGM Event for Amarc Resources Ltd.", "event_status": "Confirmed"}}}},
+        {
+            "request": "NVDA",
+            "results": [
+                {
+                    "tables": {
+                        "corporate_calendars": [
+                            {
+                                "begin_date_time": "2026-11-17",
+                                "event": "NVIDIA Corp Third Quarter Earnings Result for 2027",
+                                "event_status": "Confirmed",
+                                "event_fiscal_year": 2027,
+                            },
+                            {
+                                "begin_date_time": "2026-11-17",
+                                "event": "NVIDIA Corp Q3 Earnings Conference Call",
+                                "event_status": "Confirmed",
+                                "event_fiscal_year": 2027,
+                            },
+                        ]
+                    }
+                }
+            ],
+        },
+        {
+            "request": "AXREF",
+            "results": {
+                "tables": {
+                    "corporate_calendars": {
+                        "begin_date_time": "2012-09-27",
+                        "event": "AGM Event for Amarc Resources Ltd.",
+                        "event_status": "Confirmed",
+                    }
+                }
+            },
+        },
     ]
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -214,10 +310,14 @@ def test_share_class_symbols_between_sec_and_tradier():
 def test_tradier_market_caps_take_the_live_listing():
     # Shapes as Tradier returns them: several listings per symbol, most without a profile.
     body = [
-        {"request": "DIS", "results": [
-            {"type": "Company", "tables": {"company_profile": {}, "share_class_profile": None}},
-            {"type": "Stock", "tables": {"share_class_profile": {"market_cap": 205423940730}}},
-            {"type": "Stock", "tables": {"share_class_profile": None}}]},
+        {
+            "request": "DIS",
+            "results": [
+                {"type": "Company", "tables": {"company_profile": {}, "share_class_profile": None}},
+                {"type": "Stock", "tables": {"share_class_profile": {"market_cap": 205423940730}}},
+                {"type": "Stock", "tables": {"share_class_profile": None}},
+            ],
+        },
         {"request": "ZZZZQ", "results": [{"type": "Stock", "tables": {"share_class_profile": None}}]},
     ]
     md = TradierMarketData("k", transport=transport({"/markets/fundamentals/company": body}))

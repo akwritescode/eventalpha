@@ -13,8 +13,10 @@ import feedparser
 from eventalpha.sec.client import RateLimitedClient
 from eventalpha.sec.index import IndexEntry
 
-FEED_URL = ("https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type={form}&company=&dateb="
-            "&owner=include&start={start}&count=100&output=atom")
+FEED_URL = (
+    "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type={form}&company=&dateb="
+    "&owner=include&start={start}&count=100&output=atom"
+)
 _TITLE = re.compile(r"^(?P<form>.+?) - (?P<company>.+) \((?P<cik>\d+)\) \((?P<role>[^)]+)\)$")
 _ACCESSION = re.compile(r"accession-number=(\d{10}-\d{2}-\d{6})")
 
@@ -28,8 +30,13 @@ def parse_feed(xml: bytes | str) -> list[tuple[IndexEntry, datetime]]:
             continue
         accepted = datetime.fromisoformat(e["updated"])
         cik = str(int(title["cik"]))
-        entry = IndexEntry(form_type=title["form"].strip(), company=title["company"].strip(), cik=cik,
-                           date_filed=accepted.date(), path=f"edgar/data/{cik}/{acc.group(1)}.txt")
+        entry = IndexEntry(
+            form_type=title["form"].strip(),
+            company=title["company"].strip(),
+            cik=cik,
+            date_filed=accepted.date(),
+            path=f"edgar/data/{cik}/{acc.group(1)}.txt",
+        )
         out.append((entry, accepted))
     return out
 

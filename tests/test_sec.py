@@ -33,10 +33,13 @@ def submission(header_extra: str, docs: str) -> str:
 
 
 def doc(doc_type: str, body: str, description: str = "") -> str:
-    return f"<DOCUMENT>\n<TYPE>{doc_type}\n<FILENAME>f\n<DESCRIPTION>{description}\n<TEXT>\n{body}\n</TEXT>\n</DOCUMENT>\n"
+    return (
+        f"<DOCUMENT>\n<TYPE>{doc_type}\n<FILENAME>f\n<DESCRIPTION>{description}\n<TEXT>\n{body}\n</TEXT>\n</DOCUMENT>\n"
+    )
 
 
 # ---------- index ----------
+
 
 def test_index_url_uses_quarter():
     assert daily_index_url(date(2026, 11, 13)).endswith("/2026/QTR4/form.20261113.idx")
@@ -59,6 +62,7 @@ def test_select_dedupes_and_prefers_universe_party():
 
 
 # ---------- 8-K ----------
+
 
 def test_8k_article():
     text = submission(
@@ -152,10 +156,15 @@ def test_13f_header_and_holdings():
     assert header["period_of_report"] == date(2026, 9, 30) and int(header["table_entry_total"]) == 1
     assert len(rows) == 1
     assert (rows[0]["cusip"], int(rows[0]["shares"]), rows[0]["share_type"], int(rows[0]["voting_sole"])) == (
-        "387328107", 45000, "SH", 45000)
+        "387328107",
+        45000,
+        "SH",
+        45000,
+    )
 
 
 # ---------- 10-Q / 10-K ----------
+
 
 def test_sections_skip_table_of_contents():
     body = "risk text. " * 40
@@ -174,14 +183,45 @@ def test_sections_skip_table_of_contents():
 
 def test_company_facts_keep_only_this_filing(monkeypatch):
     monkeypatch.setattr(sec_client.time, "sleep", lambda s: None)
-    payload = {"facts": {"us-gaap": {"Revenues": {"units": {"USD": [
-        {"start": "2026-07-01", "end": "2026-09-30", "val": 100, "accn": "0001628280-26-073758", "fy": 2026, "fp": "Q3", "form": "10-Q"},
-        {"start": "2025-07-01", "end": "2025-09-30", "val": 90, "accn": "0000000000-25-000001", "fy": 2025, "fp": "Q3", "form": "10-Q"},
-    ]}}}, "dei": {"EntityCommonStockSharesOutstanding": {"units": {"shares": [
-        {"end": "2026-10-31", "val": 81_000_000, "accn": "0001628280-26-073758"}]}}}}}
+    payload = {
+        "facts": {
+            "us-gaap": {
+                "Revenues": {
+                    "units": {
+                        "USD": [
+                            {
+                                "start": "2026-07-01",
+                                "end": "2026-09-30",
+                                "val": 100,
+                                "accn": "0001628280-26-073758",
+                                "fy": 2026,
+                                "fp": "Q3",
+                                "form": "10-Q",
+                            },
+                            {
+                                "start": "2025-07-01",
+                                "end": "2025-09-30",
+                                "val": 90,
+                                "accn": "0000000000-25-000001",
+                                "fy": 2025,
+                                "fp": "Q3",
+                                "form": "10-Q",
+                            },
+                        ]
+                    }
+                }
+            },
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {"shares": [{"end": "2026-10-31", "val": 81_000_000, "accn": "0001628280-26-073758"}]}
+                }
+            },
+        }
+    }
     with respx.mock:
         respx.get("https://data.sec.gov/api/xbrl/companyfacts/CIK0000824142.json").mock(
-            return_value=httpx.Response(200, json=payload))
+            return_value=httpx.Response(200, json=payload)
+        )
         with sec_client.RateLimitedClient("t", 1000) as c:
             rows = periodic.fetch_fact_rows(c, entry("10-Q"))
     assert {(r["concept"], int(r["value"]), r["period_start"]) for r in rows} == {
@@ -211,8 +251,14 @@ def test_cross_references_do_not_end_a_section():
 
 
 def test_6k_generic_exhibit_label_uses_press_release_headline():
-    text = submission("", doc("6-K", "<p>cover</p>")
-                      + doc("EX-99.1", "<p>EXHIBIT 99.1</p><p>Americas Gold and Silver Reports Record Q3 Revenue</p>",
-                            description="EXHIBIT 99.1"))
+    text = submission(
+        "",
+        doc("6-K", "<p>cover</p>")
+        + doc(
+            "EX-99.1",
+            "<p>EXHIBIT 99.1</p><p>Americas Gold and Silver Reports Record Q3 Revenue</p>",
+            description="EXHIBIT 99.1",
+        ),
+    )
     a = events.to_article(entry("6-K", cik="1"), parse_submission(text), {"1": ("Americas Gold", ["USAS"])})
     assert a.title == "AAON, INC. 6-K: Americas Gold and Silver Reports Record Q3 Revenue"

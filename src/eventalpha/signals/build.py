@@ -34,9 +34,15 @@ class Signal:
     inputs_as_of: dict[str, Any] = field(default_factory=dict)
 
     def row(self) -> dict[str, Any]:
-        return {"signal_type": self.signal_type, "session_date": self.session_date, "generated_at": self.generated_at,
-                "score": self.score, "confidence": self.confidence, "payload": self.payload,
-                "inputs_as_of": self.inputs_as_of}
+        return {
+            "signal_type": self.signal_type,
+            "session_date": self.session_date,
+            "generated_at": self.generated_at,
+            "score": self.score,
+            "confidence": self.confidence,
+            "payload": self.payload,
+            "inputs_as_of": self.inputs_as_of,
+        }
 
 
 def _json(obj: Any) -> Any:
@@ -63,10 +69,17 @@ def _weighted(items: list[tuple[float, float]]) -> float | None:
 
 
 def _article_brief(a: inputs.ScoredArticle) -> dict[str, Any]:
-    return {"tickers": a.tickers, "title": a.title, "url": a.url, "form_type": a.form_type,
-            "sentiment": a.sentiment, "sentiment_score": round(a.sentiment_score, 3),
-            "materiality": round(a.materiality, 2), "events": a.top_events(),
-            "published_at": a.published_at.isoformat()}
+    return {
+        "tickers": a.tickers,
+        "title": a.title,
+        "url": a.url,
+        "form_type": a.form_type,
+        "sentiment": a.sentiment,
+        "sentiment_score": round(a.sentiment_score, 3),
+        "materiality": round(a.materiality, 2),
+        "events": a.top_events(),
+        "published_at": a.published_at.isoformat(),
+    }
 
 
 def _market_moves(snap: dict[str, dict[str, Any]], context: dict[str, str]) -> list[dict[str, Any]]:
@@ -80,20 +93,39 @@ def _market_moves(snap: dict[str, dict[str, Any]], context: dict[str, str]) -> l
         if prev is None or float(prev) == float(q["last"]):  # index quotes after hours: use daily bars
             prev = q.get("bar_prev_close")
             chg = (float(q["last"]) / float(prev) - 1) * 100 if prev else chg
-        moves.append({"symbol": sym, "label": label, "last": float(q["last"]),
-                      "change_pct": round(float(chg), 2) if chg is not None else None})
+        moves.append(
+            {
+                "symbol": sym,
+                "label": label,
+                "last": float(q["last"]),
+                "change_pct": round(float(chg), 2) if chg is not None else None,
+            }
+        )
     return moves
 
 
 def _econ_brief(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [{"title": e["title"], "importance": e["importance"],
-             "time": e["scheduled_at"].strftime("%H:%M") if e["scheduled_at"] else None} for e in events]
+    return [
+        {
+            "title": e["title"],
+            "importance": e["importance"],
+            "time": e["scheduled_at"].strftime("%H:%M") if e["scheduled_at"] else None,
+        }
+        for e in events
+    ]
 
 
 # ---------- 16:45 SPX overnight ----------
 
-def build_spx_overnight(engine: Engine, universe: Universe, session_date: date, window_start: datetime,
-                        now: datetime, next_session: date | None) -> Signal:
+
+def build_spx_overnight(
+    engine: Engine,
+    universe: Universe,
+    session_date: date,
+    window_start: datetime,
+    now: datetime,
+    next_session: date | None,
+) -> Signal:
     articles = inputs.scored_articles(engine, window_start, now)
     company_news = [a for a in articles if a.company_specific >= MIN_COMPANY_SPECIFIC]
 
@@ -123,13 +155,21 @@ def build_spx_overnight(engine: Engine, universe: Universe, session_date: date, 
     tomorrow_events = inputs.econ_events_on(engine, next_session) if next_session else []
     payload = {
         "window": {"start": window_start.isoformat(), "end": now.isoformat()},
-        "components": {"megacap_news": mega_score and round(mega_score, 3),
-                       "breadth": breadth_score and round(breadth_score, 3),
-                       "megacap_weight": MEGACAP_WEIGHT},
-        "counts": {"articles_scored": len(articles), "company_specific": len(company_news),
-                   "megacap_articles": len(megacap), "unscored": unscored},
-        "megacap_news": [_article_brief(a) | {"company": c.name, "cap_weight": c.weight}
-                         for a, c in sorted(megacap, key=lambda ac: -ac[1].weight * ac[0].materiality)[:10]],
+        "components": {
+            "megacap_news": mega_score and round(mega_score, 3),
+            "breadth": breadth_score and round(breadth_score, 3),
+            "megacap_weight": MEGACAP_WEIGHT,
+        },
+        "counts": {
+            "articles_scored": len(articles),
+            "company_specific": len(company_news),
+            "megacap_articles": len(megacap),
+            "unscored": unscored,
+        },
+        "megacap_news": [
+            _article_brief(a) | {"company": c.name, "cap_weight": c.weight}
+            for a, c in sorted(megacap, key=lambda ac: -ac[1].weight * ac[0].materiality)[:10]
+        ],
         "earnings_today": inputs.earnings_on(engine, session_date, universe_tickers),
         "earnings_next_session": inputs.earnings_on(engine, next_session, universe_tickers) if next_session else [],
         "macro_next_session": _econ_brief(tomorrow_events),
@@ -143,10 +183,16 @@ def build_spx_overnight(engine: Engine, universe: Universe, session_date: date, 
 
 # ---------- 09:15 premarket ----------
 
-def build_premarket(engine: Engine, universe: Universe, session_date: date, window_start: datetime,
-                    now: datetime) -> Signal:
-    articles = [a for a in inputs.scored_articles(engine, window_start, now)
-                if a.company_specific >= MIN_COMPANY_SPECIFIC and a.materiality >= MIN_MATERIALITY and a.tickers]
+
+def build_premarket(
+    engine: Engine, universe: Universe, session_date: date, window_start: datetime, now: datetime
+) -> Signal:
+    articles = [
+        a
+        for a in inputs.scored_articles(engine, window_start, now)
+        if a.company_specific >= MIN_COMPANY_SPECIFIC and a.materiality >= MIN_MATERIALITY and a.tickers
+    ]
+
     # One entry per company: its strongest item (materiality × strength of sentiment).
     def strength(a: inputs.ScoredArticle) -> float:
         return a.materiality * abs(a.sentiment_score)
@@ -168,9 +214,11 @@ def build_premarket(engine: Engine, universe: Universe, session_date: date, wind
         "earnings_today": inputs.earnings_on(engine, session_date),
         "macro_today": _econ_brief(inputs.econ_events_on(engine, session_date)),
         "cpi_surprise": inputs.cpi_surprises(engine, session_date)
-        if any("Consumer Price Index" in e["title"] for e in inputs.econ_events_on(engine, session_date)) else [],
+        if any("Consumer Price Index" in e["title"] for e in inputs.econ_events_on(engine, session_date))
+        else [],
         "premarket_moves": _market_moves(inputs.snapshot(engine, session_date, "premarket"), universe.context_symbols),
     }
     confidence = round(min(1.0, len(articles) / 20), 2) if tone is not None else 0.0
-    return Signal("premarket", session_date, now, tone and _clip(tone), confidence, _json(payload),
-                  inputs.freshness(engine))
+    return Signal(
+        "premarket", session_date, now, tone and _clip(tone), confidence, _json(payload), inputs.freshness(engine)
+    )

@@ -30,27 +30,146 @@ MAX_RANK = 4000  # beyond this, names are too obscure and too generic to trust
 MAX_MATCHES = 3
 
 _SUFFIXES = {
-    "inc", "incorporated", "corp", "corporation", "co", "company", "companies", "ltd", "limited", "plc",
-    "llc", "lp", "sa", "nv", "ag", "se", "spa", "holdings", "holding", "group", "the", "de", "com", "class",
-    "a", "b", "adr", "ads", "trust", "new",
+    "inc",
+    "incorporated",
+    "corp",
+    "corporation",
+    "co",
+    "company",
+    "companies",
+    "ltd",
+    "limited",
+    "plc",
+    "llc",
+    "lp",
+    "sa",
+    "nv",
+    "ag",
+    "se",
+    "spa",
+    "holdings",
+    "holding",
+    "group",
+    "the",
+    "de",
+    "com",
+    "class",
+    "a",
+    "b",
+    "adr",
+    "ads",
+    "trust",
+    "new",
 }
 # Big-company names that are also everyday words: never matched on their own.
 _COMMON = {
-    "target", "visa", "block", "gap", "match", "shell", "apple", "amazon", "oracle", "ford", "delta", "united",
-    "american", "general", "first", "global", "national", "international", "energy", "health", "capital",
-    "financial", "bank", "realty", "royalty", "southern", "public", "progressive", "state", "best", "dollar",
-    "booking", "service", "services", "cheniere", "mobile", "union", "pacific", "power", "insight", "core",
-    "arch", "ally", "evergy", "equity", "fair", "simply", "summit", "uniti", "ventas", "welltower", "nuscale",
-    "carrier", "corning", "loews", "domino", "chewy", "toast", "snap", "dash", "twilio", "zoom", "square",
+    "target",
+    "visa",
+    "block",
+    "gap",
+    "match",
+    "shell",
+    "apple",
+    "amazon",
+    "oracle",
+    "ford",
+    "delta",
+    "united",
+    "american",
+    "general",
+    "first",
+    "global",
+    "national",
+    "international",
+    "energy",
+    "health",
+    "capital",
+    "financial",
+    "bank",
+    "realty",
+    "royalty",
+    "southern",
+    "public",
+    "progressive",
+    "state",
+    "best",
+    "dollar",
+    "booking",
+    "service",
+    "services",
+    "cheniere",
+    "mobile",
+    "union",
+    "pacific",
+    "power",
+    "insight",
+    "core",
+    "arch",
+    "ally",
+    "evergy",
+    "equity",
+    "fair",
+    "simply",
+    "summit",
+    "uniti",
+    "ventas",
+    "welltower",
+    "nuscale",
+    "carrier",
+    "corning",
+    "loews",
+    "domino",
+    "chewy",
+    "toast",
+    "snap",
+    "dash",
+    "twilio",
+    "zoom",
+    "square",
     # exchanges, places and surnames that are also company names
-    "nasdaq", "nyse", "nova", "williams", "johnson", "morgan", "edison", "dominion", "eaton", "jacobs", "baker",
-    "moody", "hess", "murphy", "reynolds", "cooper", "fox", "news", "texas", "canadian", "pioneer", "phillips",
+    "nasdaq",
+    "nyse",
+    "nova",
+    "williams",
+    "johnson",
+    "morgan",
+    "edison",
+    "dominion",
+    "eaton",
+    "jacobs",
+    "baker",
+    "moody",
+    "hess",
+    "murphy",
+    "reynolds",
+    "cooper",
+    "fox",
+    "news",
+    "texas",
+    "canadian",
+    "pioneer",
+    "phillips",
 }
 # Descriptors dropped to get the short name people write: "Uber Technologies" → "Uber".
 _DESCRIPTORS = {
-    "technologies", "technology", "systems", "industries", "pharmaceuticals", "therapeutics", "brands",
-    "enterprises", "platforms", "networks", "software", "semiconductor", "semiconductors", "solutions",
-    "communications", "labs", "laboratories", "biosciences",
+    "technologies",
+    "technology",
+    "systems",
+    "industries",
+    "pharmaceuticals",
+    "therapeutics",
+    "brands",
+    "enterprises",
+    "platforms",
+    "networks",
+    "software",
+    "semiconductor",
+    "semiconductors",
+    "solutions",
+    "communications",
+    "labs",
+    "laboratories",
+    "biosciences",
 }
 # Some of these (Apple, Amazon, Oracle) come back through config/company_aliases.yaml.
 
@@ -83,8 +202,9 @@ class CompanyMatcher:
         self._patterns = sorted(patterns, key=lambda p: p.rank)
 
     @classmethod
-    def build(cls, universe: Iterable[Mapping[str, Any]], aliases: Mapping[str, list[str]] | None = None
-              ) -> CompanyMatcher:
+    def build(
+        cls, universe: Iterable[Mapping[str, Any]], aliases: Mapping[str, list[str]] | None = None
+    ) -> CompanyMatcher:
         """`universe`: rows with ticker, cik, name, size_rank (the ticker_universe table)."""
         primary: dict[str, Mapping[str, Any]] = {}
         for row in universe:
@@ -104,8 +224,13 @@ class CompanyMatcher:
             if len(words) >= 2:
                 patterns.append(_Pattern(_phrase(name, False), row["ticker"], rank))
             short = words[0] if len(words) == 1 or (len(words) == 2 and words[1].lower() in _DESCRIPTORS) else None
-            if short and rank <= SINGLE_WORD_MAX_RANK and len(short) >= 4 and short.lower() not in _COMMON \
-                    and short.lower() not in seen:
+            if (
+                short
+                and rank <= SINGLE_WORD_MAX_RANK
+                and len(short) >= 4
+                and short.lower() not in _COMMON
+                and short.lower() not in seen
+            ):
                 patterns.append(_Pattern(_phrase(short, True), row["ticker"], rank))
                 seen.add(short.lower())
             seen.add(key)

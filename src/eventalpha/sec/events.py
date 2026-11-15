@@ -73,9 +73,7 @@ def _published(entry: IndexEntry, sub: Submission) -> datetime:
     return sub.accepted_at or datetime.combine(entry.date_filed, datetime.min.time(), tzinfo=EASTERN)
 
 
-def to_article(
-    entry: IndexEntry, sub: Submission, cik_map: dict[str, tuple[str, list[str]]]
-) -> Article | None:
+def to_article(entry: IndexEntry, sub: Submission, cik_map: dict[str, tuple[str, list[str]]]) -> Article | None:
     """None when the filing isn't about a company in the universe (e.g. 13D on a private issuer)."""
     form = entry.form_type
     if form.startswith("SCHEDULE 13D"):
@@ -96,8 +94,11 @@ def to_article(
         headline = headline or next((_first_line(d.text) for d in exhibits if _first_line(d.text)), None)
         headline = headline or "Report of foreign private issuer"
     else:  # S-1, 424B4, 424B5: the prospectus cover and summary say what is being sold
-        headline = {"S-1": "Registration statement (S-1)", "424B4": "Final IPO prospectus (424B4)",
-                    "424B5": "Securities offering prospectus (424B5)"}[form]
+        headline = {
+            "S-1": "Registration statement (S-1)",
+            "424B4": "Final IPO prospectus (424B4)",
+            "424B5": "Securities offering prospectus (424B5)",
+        }[form]
     return Article(
         source="sec_edgar",
         source_id=entry.accession,
@@ -119,9 +120,7 @@ def _text(root, path: str) -> str | None:
     return el.text.strip() if el is not None and el.text and el.text.strip() else None
 
 
-def _schedule_13d(
-    entry: IndexEntry, sub: Submission, cik_map: dict[str, tuple[str, list[str]]]
-) -> Article | None:
+def _schedule_13d(entry: IndexEntry, sub: Submission, cik_map: dict[str, tuple[str, list[str]]]) -> Article | None:
     doc = sub.first(entry.form_type)
     if doc is None or not doc.is_xml:
         return None
@@ -141,8 +140,12 @@ def _schedule_13d(
 
     # Items 3-6 carry the narrative: source of funds, purpose and plans, interest, agreements.
     sections = []
-    for tag, label in (("item4", "Purpose of transaction"), ("item3", "Source of funds"),
-                       ("item5", "Interest in securities"), ("item6", "Contracts and arrangements")):
+    for tag, label in (
+        ("item4", "Purpose of transaction"),
+        ("item3", "Source of funds"),
+        ("item5", "Interest in securities"),
+        ("item6", "Contracts and arrangements"),
+    ):
         el = root.find(f".//{tag}")
         if el is not None:
             text = " ".join(t.strip() for t in el.itertext() if t.strip())

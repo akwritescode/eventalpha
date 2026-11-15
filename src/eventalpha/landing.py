@@ -38,8 +38,9 @@ def write_jsonl(
         import boto3
 
         # put_object replaces the whole object, so a retried task never leaves a partial file.
-        boto3.client("s3").put_object(Bucket=bucket, Key=f"raw/{key}", Body=body.encode(),
-                                      ContentType="application/x-ndjson")
+        boto3.client("s3").put_object(
+            Bucket=bucket, Key=f"raw/{key}", Body=body.encode(), ContentType="application/x-ndjson"
+        )
         return f"s3://{bucket}/raw/{key}"
     path = root / key
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -83,12 +83,31 @@ def publish_alerts(
     return published
 
 
-def feed_fields(kind: str, ref: str, title: str, *, tickers: Sequence[str] = (), sentiment: str = "",
-                impact: str = "normal", url: str = "", occurred_at: str = "", label: str = "") -> dict[str, str]:
+def feed_fields(
+    kind: str,
+    ref: str,
+    title: str,
+    *,
+    tickers: Sequence[str] = (),
+    sentiment: str = "",
+    impact: str = "normal",
+    url: str = "",
+    occurred_at: str = "",
+    label: str = "",
+) -> dict[str, str]:
     """A notification-sized description of one new stream item. `ref` matches the feed item id
     the API serves (e.g. "article:154", "signal:premarket:2026-11-13", "macro:bls:...")."""
-    return {"kind": kind, "ref": ref, "title": title, "label": label, "tickers": ",".join(tickers),
-            "sentiment": sentiment, "impact": impact, "url": url, "occurred_at": occurred_at}
+    return {
+        "kind": kind,
+        "ref": ref,
+        "title": title,
+        "label": label,
+        "tickers": ",".join(tickers),
+        "sentiment": sentiment,
+        "impact": impact,
+        "url": url,
+        "occurred_at": occurred_at,
+    }
 
 
 def publish_feed_items(client: redis.Redis, items: Sequence[Mapping[str, str]]) -> int:
@@ -106,11 +125,17 @@ def article_feed_items(
         if a is None:
             continue
         sec = a["source"] == "sec_edgar"
-        out.append(feed_fields(
-            "sec" if sec else "news", f"article:{a['id']}", a["title"],
-            tickers=a.get("tickers") or [], sentiment=s["sentiment"],
-            impact="high" if is_alert(s) else "normal", url=a["url"],
-            occurred_at=a["published_at"].isoformat(),
-            label=f"SEC · {a.get('form_type')}" if sec else "NEWS",
-        ))
+        out.append(
+            feed_fields(
+                "sec" if sec else "news",
+                f"article:{a['id']}",
+                a["title"],
+                tickers=a.get("tickers") or [],
+                sentiment=s["sentiment"],
+                impact="high" if is_alert(s) else "normal",
+                url=a["url"],
+                occurred_at=a["published_at"].isoformat(),
+                label=f"SEC · {a.get('form_type')}" if sec else "NEWS",
+            )
+        )
     return out

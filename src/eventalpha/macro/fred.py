@@ -53,8 +53,9 @@ class ReleaseDate:
 
 
 class FredClient:
-    def __init__(self, api_key: str | None, timeout: float = 20.0,
-                 transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self, api_key: str | None, timeout: float = 20.0, transport: httpx.BaseTransport | None = None
+    ) -> None:
         if not api_key:
             raise FredError("FRED_API_KEY is not set (free key: https://fredaccount.stlouisfed.org/apikeys)")
         self._key = api_key
@@ -80,12 +81,20 @@ class FredClient:
         return out
 
     def release_dates(self, start: date, end: date) -> list[ReleaseDate]:
-        data = self._get("/releases/dates", {
-            "realtime_start": start.isoformat(), "realtime_end": end.isoformat(),
-            "include_release_dates_with_no_data": "true", "limit": 1000, "sort_order": "asc",
-        })
-        return [ReleaseDate(int(r["release_id"]), r["release_name"], date.fromisoformat(r["date"]))
-                for r in data.get("release_dates", [])]
+        data = self._get(
+            "/releases/dates",
+            {
+                "realtime_start": start.isoformat(),
+                "realtime_end": end.isoformat(),
+                "include_release_dates_with_no_data": "true",
+                "limit": 1000,
+                "sort_order": "asc",
+            },
+        )
+        return [
+            ReleaseDate(int(r["release_id"]), r["release_name"], date.fromisoformat(r["date"]))
+            for r in data.get("release_dates", [])
+        ]
 
     def close(self) -> None:
         self._client.close()

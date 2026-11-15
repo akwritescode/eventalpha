@@ -64,8 +64,12 @@ def rss_news_hourly():
         for a in articles:
             a.tickers = merge_tickers(a.tickers, matcher.find(f"{a.title}\n{a.summary or ''}"))
         write_jsonl(
-            settings().raw_data_dir, f"rss_{f.name}", ctx["logical_date"].date(), ctx["run_id"],
-            (a.model_dump(mode="json") for a in articles), bucket=settings().raw_bucket,
+            settings().raw_data_dir,
+            f"rss_{f.name}",
+            ctx["logical_date"].date(),
+            ctx["run_id"],
+            (a.model_dump(mode="json") for a in articles),
+            bucket=settings().raw_bucket,
         )
         counts = upsert_articles(engine(), articles)
         # Save the ETag only after the load commits: a crash before this just re-fetches next run.

@@ -74,8 +74,16 @@ def parse_charts(horizon: str, charts: list[dict], last_n_periods: int = 3) -> l
             for label, value in zip(labels, values, strict=False):
                 if value is None or not label[:1].isdigit():  # skip "CPI Oct"-style marker columns
                     continue
-                rows.append({"horizon": horizon, "target_period": period, "measure": measure,
-                             "vintage": vintage_date(label, period), "value": value, "actual": actual})
+                rows.append(
+                    {
+                        "horizon": horizon,
+                        "target_period": period,
+                        "measure": measure,
+                        "vintage": vintage_date(label, period),
+                        "value": value,
+                        "actual": actual,
+                    }
+                )
     return rows
 
 

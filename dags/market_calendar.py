@@ -11,8 +11,14 @@ from airflow.sdk import dag, task
 from eventalpha_common import DEFAULT_ARGS, START_DATE, engine, market_data
 
 
-@dag(schedule="15 0 * * *", start_date=START_DATE, catchup=False, default_args=DEFAULT_ARGS,
-     tags=["reference", "market"], doc_md=__doc__)
+@dag(
+    schedule="15 0 * * *",
+    start_date=START_DATE,
+    catchup=False,
+    default_args=DEFAULT_ARGS,
+    tags=["reference", "market"],
+    doc_md=__doc__,
+)
 def market_calendar():
     @task
     def refresh() -> int:
