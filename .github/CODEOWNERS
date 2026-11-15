@@ -1,0 +1,5 @@
+# Code owners review and approve every pull request that touches their paths
+# (enforced by the "Require review from Code Owners" rule on main).
+# The last matching pattern wins; add more specific paths below as maintainers join, e.g.
+#   /web/  @akwritescode @another-maintainer
+*   @akwritescode
