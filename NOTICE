@@ -1,0 +1,20 @@
+EventAlpha
+Copyright 2026 Anil Kumar Kadimisetty
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Data sources
+------------
+The license covers this project's source code only. It grants no rights to data that the
+pipeline fetches from third parties; each source keeps its own terms:
+
+* SEC EDGAR filings: U.S. Securities and Exchange Commission (public; subject to the SEC's
+  fair-access policy, which requires a descriptive User-Agent and rate limits).
+* Economic data: U.S. Bureau of Labor Statistics; FRED, Federal Reserve Bank of St. Louis
+  (subject to the FRED terms of use); Board of Governors of the Federal Reserve System.
+* Inflation nowcasts: Federal Reserve Bank of Cleveland, Inflation Nowcasting
+  (doi:10.26509/frbc-inflationnowcast), used for non-commercial research with attribution.
+* Market data: Tradier (subject to the Tradier API terms; not redistributed by this project).
+* Press releases: syndicated RSS feeds, linked to their publishers, not republished.
+
+Nothing in this project is investment advice. Signals are research output.

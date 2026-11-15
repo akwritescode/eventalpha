@@ -269,6 +269,13 @@ deploy/               Caddyfile, deploy.sh
 docker-compose*.yml   base (production shape) · override (local dev, auto-loaded) · prod
 ```
 
+## License
+
+Apache License 2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE). You may use, modify and
+redistribute the code, including commercially, as long as you keep the license and notices;
+the license also includes an explicit patent grant. It covers the code only, not the data the
+pipeline fetches, which stays under each source's own terms (listed in NOTICE).
+
 ## Attribution
 
 Inflation nowcasts: Federal Reserve Bank of Cleveland, Inflation Nowcasting
