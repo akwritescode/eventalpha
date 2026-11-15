@@ -1,5 +1,12 @@
 # EventAlpha
 
+[![CI](https://github.com/akwritescode/eventalpha/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/akwritescode/eventalpha/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196.svg)](https://www.conventionalcommits.org)
+![Airflow 3](https://img.shields.io/badge/Airflow-3-017CEE.svg)
+![Java 25 · Spring Boot 4](https://img.shields.io/badge/Java%2025-Spring%20Boot%204-6DB33F.svg)
+![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB.svg)
+
 **Open-source, event-driven quant intelligence.** EventAlpha collects corporate events from
 SEC EDGAR and syndicated news feeds, classifies the text ones with
 a pluggable classifier (sentiment, materiality, event types; currently
@@ -268,6 +275,12 @@ infra/                Terraform for Lightsail, first-boot bootstrap script
 deploy/               Caddyfile, deploy.sh
 docker-compose*.yml   base (production shape) · override (local dev, auto-loaded) · prod
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) (setup, Conventional Commits, checks) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). Security issues: [SECURITY.md](SECURITY.md). Design
+decisions and their trade-offs are recorded in [docs/adr](docs/adr/README.md).
 
 ## License
 

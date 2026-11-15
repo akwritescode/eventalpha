@@ -1,0 +1,40 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Steps, commands, the DAG or endpoint involved.
+      placeholder: |
+        1. docker compose up -d
+        2. trigger rss_news_hourly
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Pipeline / DAGs, API, Web UI, Alerts (Telegram), Deployment, Docs, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Task logs, API responses, browser console. Remove any keys or tokens first.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Commit or release
+      placeholder: v0.1.0 or a commit SHA
