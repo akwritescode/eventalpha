@@ -7,6 +7,10 @@ updates:
     schedule: {interval: weekly, day: monday}
     groups: {python: {patterns: ["*"]}}
     commit-message: {prefix: build, include: scope}
+    ignore:
+      # Pinned to the version the Airflow image ships (pyproject.toml: >=2.0,<2.1); moves with Airflow.
+      - dependency-name: sqlalchemy
+        versions: [">=2.1"]
 
   - package-ecosystem: npm
     directory: /web
