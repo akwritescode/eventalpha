@@ -129,9 +129,28 @@ docker compose exec airflow-scheduler airflow backfill create --dag-id sec_insid
   --from-date 2026-11-02T01:00:00-05:00 --to-date 2026-11-13T01:00:00-05:00   # filing dates, 01:00 ET
 ```
 
-Local tools: `docker compose --profile tools up -d redisinsight` starts Redis Insight at
-http://localhost:5540 (add database: host `redis`, port 6379). Without it:
-`docker compose exec redis redis-cli XRANGE eventalpha:events - + COUNT 5`.
+### Looking at Redis (the live event stream)
+
+[Redis Insight](https://redis.io/insight/) is an optional local service. A plain
+`docker compose up -d` doesn't start it; start it when you need it:
+
+```bash
+docker compose --profile tools up -d redisinsight   # → http://localhost:5540
+```
+
+First time only, in the UI: **Add Redis database** → add manually →
+**Host `redis`** (the Docker service name, not `localhost`), **Port `6379`**, alias
+`eventalpha`, no username or password. The connection is saved in a volume.
+
+Then open **Browser** → key `eventalpha:events` (a Stream) to see published high-impact
+events and, under *Consumer Groups*, the `telegram` group with its pending and delivered entries.
+
+Without the GUI:
+
+```bash
+docker compose exec redis redis-cli XRANGE eventalpha:events - + COUNT 5   # first 5 events
+docker compose exec redis redis-cli XINFO GROUPS eventalpha:events          # consumer groups, lag
+```
 
 Development:
 
