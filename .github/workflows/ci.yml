@@ -6,6 +6,25 @@ on:
   pull_request:
 
 jobs:
+  commits:
+    # Hooks can be skipped with --no-verify; this can't. Same script as the local hooks.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Commit messages follow Conventional Commits
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            range="$HEAD"         # first push of a branch: check its whole history
+          else
+            range="$BASE..$HEAD"
+          fi
+          ./scripts/check-commit-msg.sh --range "$range"
+
   python:
     runs-on: ubuntu-latest
     services:
