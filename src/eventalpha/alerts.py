@@ -16,24 +16,35 @@ from eventalpha.config import Settings
 log = logging.getLogger(__name__)
 
 
-def send_telegram(settings: Settings, text: str, ops: bool = False) -> None:
+def send_telegram(settings: Settings, text: str, ops: bool = False) -> bool:
     """Channel messages (signals) by default; `ops=True` for pipeline alerts, which go to
     TELEGRAM_OPS_CHAT_ID only and are dropped (logged) when it isn't set: subscribers never
-    see operational noise."""
+    see operational noise. Returns whether Telegram accepted the message."""
     chat_id = settings.telegram_ops_chat_id if ops else settings.telegram_chat_id
     if not (settings.telegram_bot_token and chat_id):
         if ops:
             log.warning("ops alert not sent (TELEGRAM_OPS_CHAT_ID unset): %s", text[:200])
-        return
+        return False
+    # Never log the exception or URL as is: the bot token is part of the URL.
+    target = "ops chat" if ops else "channel"
     try:
-        httpx.post(
+        resp = httpx.post(
             f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
             json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
                   "disable_web_page_preview": True},
             timeout=10,
-        ).raise_for_status()
+        )
     except httpx.HTTPError as exc:  # an alert failure must never fail the task itself
-        log.warning("Telegram alert failed: %s", exc)
+        log.warning("Telegram alert to %s failed: %s", target, type(exc).__name__)
+        return False
+    if resp.status_code != 200:
+        try:
+            reason = resp.json().get("description", "")
+        except ValueError:
+            reason = ""
+        log.warning("Telegram alert to %s failed: HTTP %s %s", target, resp.status_code, reason)
+        return False
+    return True
 
 
 def ping_healthcheck(settings: Settings, suffix: str = "") -> None:

@@ -1,9 +1,9 @@
 """
 ### Pipeline watchdog, hourly
 
-Alerts on Telegram when a DAG is **paused** or a DAG file **fails to import**. Neither one
-fails a task, so `on_failure_callback` never fires and the data just stops (this is how the
-news feed sat empty until its DAG was unpaused).
+Alerts the Telegram ops chat (`TELEGRAM_OPS_CHAT_ID`) when a DAG is **paused** or a DAG file
+**fails to import**. Neither one fails a task, so `on_failure_callback` never fires and the
+data just stops (this is how the news feed sat empty until its DAG was unpaused).
 
 * Reads the Airflow REST API (`/api/v2/dags`, `/api/v2/importErrors`): task code has no
   metadata-DB access in Airflow 3, so the `airflow` CLI fails inside a task. With a login
@@ -69,9 +69,12 @@ def pipeline_watchdog():
             new_paused, new_broken = paused, broken
 
         text = watchdog.format_alert(new_paused, new_broken)
-        if text:
-            send_telegram(settings(), text)  # the alerts channel, as requested
-        return {"paused": paused, "broken": broken, "alerted": bool(text)}
+        sent = bool(text) and send_telegram(settings(), text, ops=True)  # ops chat, never the channel
+        if text and not sent and settings().redis_url:  # not delivered: try again next hour
+            with redis.Redis.from_url(settings().redis_url, decode_responses=True) as r:
+                watchdog.clear(r, "paused", new_paused)
+                watchdog.clear(r, "broken", new_broken)
+        return {"paused": paused, "broken": broken, "alerted": sent}
 
     check()
 
