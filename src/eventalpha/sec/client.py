@@ -36,7 +36,7 @@ class RateLimitedClient:
         self._next_at = max(now, self._next_at) + self._interval
 
     @staticmethod
-    def _backoff(status: int, url: str, attempt: int) -> None:
+    def _backoff(status: int | str, url: str, attempt: int) -> None:
         delay = min(2**attempt, 30)
         log.warning("SEC %s on %s, retrying in %ss", status, url, delay)
         time.sleep(delay)
@@ -44,7 +44,13 @@ class RateLimitedClient:
     def get(self, url: str, max_attempts: int = 4) -> httpx.Response:
         for attempt in range(1, max_attempts + 1):
             self._wait()
-            resp = self._client.get(url)
+            try:
+                resp = self._client.get(url)
+            except httpx.TransportError as exc:  # timeouts, resets, DNS: as transient as a 503
+                if attempt == max_attempts:
+                    raise
+                self._backoff(type(exc).__name__, url, attempt)
+                continue
             if resp.status_code not in RETRY_STATUSES or attempt == max_attempts:
                 return resp
             self._backoff(resp.status_code, url, attempt)

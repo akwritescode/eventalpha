@@ -7,9 +7,10 @@ the broker's own session calendar, holidays and 13:00 early closes included.
 from __future__ import annotations
 
 import time as _time
-from datetime import date, time
+from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -38,6 +39,15 @@ def _as_list(v: Any) -> list[dict]:
 
 def _hhmm(v: str | None) -> time | None:
     return time.fromisoformat(v) if v else None
+
+
+NY = ZoneInfo("America/New_York")
+
+
+def _trade_date(epoch_ms: int) -> date:
+    """The exchange's trading date: a 7 pm ET trade is still today in New York, though it is
+    already tomorrow in UTC (the server's time zone)."""
+    return datetime.fromtimestamp(epoch_ms / 1000, tz=NY).date()
 
 
 class TradierMarketData:
@@ -89,7 +99,7 @@ class TradierMarketData:
                     prev_close=_dec(q.get("prevclose")),
                     change_pct=_dec(q.get("change_percentage")),
                     volume=q.get("volume"),
-                    trade_date=date.fromtimestamp(trade_ms / 1000) if trade_ms else None,
+                    trade_date=_trade_date(trade_ms) if trade_ms else None,
                 )
             )
         return out

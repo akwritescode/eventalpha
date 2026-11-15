@@ -45,3 +45,21 @@ def test_failed_telegram_send_never_logs_the_bot_token(monkeypatch, caplog):
     s = SimpleNamespace(telegram_bot_token=token, telegram_ops_chat_id="-100", telegram_chat_id=None)
     assert alerts.send_telegram(s, "hi", ops=True) is False
     assert "chat not found" in caplog.text and token not in caplog.text
+
+
+def test_a_fixed_import_error_is_forgotten_so_a_new_break_alerts_again():
+    r = fakeredis.FakeRedis(decode_responses=True)
+    assert watchdog.due(r, "broken", ["dags/a.py"]) == ["dags/a.py"]
+    watchdog.forget_resolved(r, "broken", [])  # a.py imports again: off the error list
+    assert watchdog.due(r, "broken", ["dags/a.py"]) == ["dags/a.py"]  # broken again: alert now
+    watchdog.forget_resolved(r, "broken", ["dags/a.py"])  # still broken: keep the mark
+    assert watchdog.due(r, "broken", ["dags/a.py"]) == []
+
+
+def test_failure_alert_survives_a_missing_map_index():
+    from types import SimpleNamespace
+
+    from eventalpha.alerts import format_task_failure
+
+    ti = SimpleNamespace(dag_id="d", task_id="t", map_index=None, try_number=1)
+    assert "d" in format_task_failure({"task_instance": ti, "run_id": "r", "exception": None})

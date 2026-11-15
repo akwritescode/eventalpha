@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,6 +15,8 @@ from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 CALENDAR_URL = "https://www.bls.gov/schedule/news_release/bls.ics"
@@ -67,14 +70,20 @@ class BlsClient:
         if data.get("status") != "REQUEST_SUCCEEDED":
             raise BlsError(f"BLS API: HTTP {resp.status_code} {data.get('message') or resp.text[:200]}")
         out = []
-        for s in data["Results"]["series"]:
+        for s in (data.get("Results") or {}).get("series", []):
+            series_id = s.get("seriesID")
+            if not series_id:
+                continue
             for d in s.get("data", []):
                 try:
                     value = Decimal(d["value"])
-                except (InvalidOperation, KeyError):
+                except (InvalidOperation, KeyError, TypeError):
                     value = None
-                prelim = any((f or {}).get("code") == "P" for f in d.get("footnotes", []))
-                out.append(BlsObservation(s["seriesID"], int(d["year"]), d["period"], value, prelim))
+                prelim = any((f or {}).get("code") == "P" for f in d.get("footnotes") or [])
+                try:
+                    out.append(BlsObservation(series_id, int(d["year"]), d["period"], value, prelim))
+                except (KeyError, TypeError, ValueError):  # skip the malformed row, keep the rest
+                    log.warning("BLS %s: skipping malformed observation: %r", series_id, d)
         return out
 
     def release_calendar(self) -> list[ScheduledRelease]:

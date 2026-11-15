@@ -10,11 +10,14 @@ context; same-day prices come from the market data provider.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 BASE_URL = "https://api.stlouisfed.org/fred"
 
@@ -73,11 +76,17 @@ class FredClient:
             params["observation_end"] = end.isoformat()
         out = []
         for o in self._get("/series/observations", params).get("observations", []):
+            raw = o.get("value")
             try:
-                value = Decimal(o["value"]) if o["value"] not in (".", "") else None
+                value = Decimal(raw) if raw not in (None, ".", "") else None
             except InvalidOperation:
                 value = None
-            out.append(Observation(series_id, date.fromisoformat(o["date"]), value))
+            try:
+                day = date.fromisoformat(o["date"])
+            except (KeyError, TypeError, ValueError):
+                log.warning("FRED %s: skipping observation without a valid date: %r", series_id, o)
+                continue
+            out.append(Observation(series_id, day, value))
         return out
 
     def release_dates(self, start: date, end: date) -> list[ReleaseDate]:

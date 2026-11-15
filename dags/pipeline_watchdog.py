@@ -63,6 +63,7 @@ def pipeline_watchdog():
 
             with redis.Redis.from_url(settings().redis_url, decode_responses=True) as r:
                 watchdog.clear(r, "paused", [d["dag_id"] for d in dags if d["dag_id"] not in paused])
+                watchdog.forget_resolved(r, "broken", broken)  # fixed files drop off the error list
                 new_paused = watchdog.due(r, "paused", paused)
                 new_broken = watchdog.due(r, "broken", broken)
         else:

@@ -64,6 +64,9 @@ def vintage_date(label: str, period: str) -> date:
 def parse_charts(horizon: str, charts: list[dict], last_n_periods: int = 3) -> list[dict[str, Any]]:
     """Rows for the most recent target periods (older periods are final and never change)."""
     rows: list[dict[str, Any]] = []
+    # Sort by target period rather than trusting the file's chart order ("YYYY-MM" and
+    # "YYYY:Qn" both sort chronologically as text).
+    charts = sorted(charts, key=lambda c: normalize_period(c["chart"]["subcaption"]))
     for chart in charts[-last_n_periods:]:
         period = normalize_period(chart["chart"]["subcaption"])  # "2026-11" or "2026:Q4"
         labels = [c["label"] for c in chart["categories"][0]["category"]]

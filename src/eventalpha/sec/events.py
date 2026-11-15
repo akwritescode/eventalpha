@@ -94,11 +94,12 @@ def to_article(entry: IndexEntry, sub: Submission, cik_map: dict[str, tuple[str,
         headline = headline or next((_first_line(d.text) for d in exhibits if _first_line(d.text)), None)
         headline = headline or "Report of foreign private issuer"
     else:  # S-1, 424B4, 424B5: the prospectus cover and summary say what is being sold
+        # .get: amended forms (S-1/A) and any form added to the family later still get a headline.
         headline = {
             "S-1": "Registration statement (S-1)",
             "424B4": "Final IPO prospectus (424B4)",
             "424B5": "Securities offering prospectus (424B5)",
-        }[form]
+        }.get(form, f"Securities offering document ({form})")
     return Article(
         source="sec_edgar",
         source_id=entry.accession,

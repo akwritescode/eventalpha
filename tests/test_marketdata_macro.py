@@ -322,3 +322,49 @@ def test_tradier_market_caps_take_the_live_listing():
     ]
     md = TradierMarketData("k", transport=transport({"/markets/fundamentals/company": body}))
     assert md.market_caps(["DIS", "ZZZZQ"]) == {"DIS": 205423940730.0}
+
+
+def test_nowcast_picks_the_latest_periods_whatever_the_chart_order():
+    def chart(period):
+        return {
+            "chart": {"subcaption": period},
+            "categories": [{"category": [{"label": "11/04"}]}],
+            "dataset": [{"seriesname": "CPI Inflation", "data": [{"value": "0.2"}]}],
+        }
+
+    rows = parse_charts("mom", [chart("2026-11"), chart("2026-08"), chart("2026-10"), chart("2026-09")])
+    assert sorted({r["target_period"] for r in rows}) == ["2026-09", "2026-10", "2026-11"]
+
+
+def test_trade_dates_are_new_york_dates():
+    from datetime import UTC
+
+    from eventalpha.marketdata.providers.tradier import _trade_date
+
+    # 2026-11-13 19:30 ET is already 2026-11-14 in UTC.
+    assert _trade_date(int(datetime(2026, 11, 14, 0, 30, tzinfo=UTC).timestamp() * 1000)) == date(2026, 11, 13)
+
+
+def test_fred_and_bls_skip_malformed_observations():
+    from eventalpha.macro.bls import BlsClient
+    from eventalpha.macro.fred import FredClient
+
+    fred_body = {
+        "observations": [{"date": "2026-10-01", "value": "3.1"}, {"value": "9"}, {"date": "bad", "value": "1"}]
+    }
+    fred = FredClient("k", transport=transport({"/series/observations": fred_body}))
+    assert [(o.day, o.value) for o in fred.observations("CPI", date(2026, 1, 1))] == [
+        (date(2026, 10, 1), Decimal("3.1"))
+    ]
+
+    bls_body = {
+        "status": "REQUEST_SUCCEEDED",
+        "Results": {
+            "series": [
+                {"seriesID": "CUSR0000SA0", "data": [{"year": "2026", "period": "M10", "value": "1"}, {"value": "2"}]},
+                {"data": [{"year": "2026", "period": "M10", "value": "3"}]},
+            ]
+        },
+    }
+    bls = BlsClient(None, "test agent", transport=transport({"/publicAPI/v2/timeseries/data/": bls_body}))
+    assert [(o.series_id, o.period) for o in bls.series(["CUSR0000SA0"], 2026, 2026)] == [("CUSR0000SA0", "M10")]

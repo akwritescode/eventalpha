@@ -262,3 +262,26 @@ def test_6k_generic_exhibit_label_uses_press_release_headline():
     )
     a = events.to_article(entry("6-K", cik="1"), parse_submission(text), {"1": ("Americas Gold", ["USAS"])})
     assert a.title == "AAON, INC. 6-K: Americas Gold and Silver Reports Record Q3 Revenue"
+
+
+def test_get_retries_transport_errors(monkeypatch):
+    monkeypatch.setattr(sec_client.time, "sleep", lambda s: None)
+    with respx.mock:
+        route = respx.get("https://www.sec.gov/y.txt").mock(
+            side_effect=[httpx.ConnectTimeout("timed out"), httpx.Response(200, text="ok")]
+        )
+        with sec_client.RateLimitedClient("test agent", requests_per_second=1000) as c:
+            assert c.get("https://www.sec.gov/y.txt").text == "ok"
+        assert route.call_count == 2
+
+
+def test_one_bad_date_line_does_not_drop_the_daily_index():
+    bad = "8-K              BROKEN CO                                                     111111      2026AB13    edgar/data/111111/x.txt\n"
+    entries = parse_daily_index(INDEX + bad)
+    assert len(entries) == len(parse_daily_index(INDEX)) and all(e.cik != "111111" for e in entries)
+
+
+def test_amended_offering_forms_get_a_headline():
+    sub = parse_submission(submission("", doc("S-1/A", "<p>Prospectus</p>")))
+    a = events.to_article(entry("S-1/A"), sub, {"824142": ("AAON, INC.", ["AAON"])})
+    assert a.title == "AAON, INC. S-1/A: Securities offering document (S-1/A)"

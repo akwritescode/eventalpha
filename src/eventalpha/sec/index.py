@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 
 from eventalpha.sec.client import RateLimitedClient
+
+log = logging.getLogger(__name__)
 
 SEC_ARCHIVES = "https://www.sec.gov/Archives"
 COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
@@ -64,12 +67,17 @@ def parse_daily_index(text: str) -> list[IndexEntry]:
         if len(parts) != 4 or not parts[1].isdigit():
             continue
         company, cik, filed, path = parts
+        try:
+            date_filed = datetime.strptime(filed, "%Y%m%d").date()
+        except ValueError:  # one malformed line must not cost the rest of the day's index
+            log.warning("skipping daily index line with a bad date: %r", line[:120])
+            continue
         entries.append(
             IndexEntry(
                 form_type=form_type,
                 company=company.strip(),
                 cik=cik,
-                date_filed=datetime.strptime(filed, "%Y%m%d").date(),
+                date_filed=date_filed,
                 path=path,
             )
         )

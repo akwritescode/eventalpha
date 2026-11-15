@@ -41,3 +41,10 @@ def test_everyday_words_exchanges_and_small_companies_are_not_matched():
 def test_one_ticker_per_company_largest_first_and_cited_tickers_lead():
     assert M.find("Google and Uber partner") == ["GOOGL", "UBER"]
     assert merge_tickers(["WWB"], ["UBER", "WWB"]) == ["WWB", "UBER"]
+
+
+def test_a_shared_short_name_goes_to_the_larger_company_whatever_the_row_order():
+    small = {"ticker": "SMLL", "cik": "9", "name": "Acmeco Systems Inc", "size_rank": 900}
+    large = {"ticker": "LRGE", "cik": "8", "name": "Acmeco Technologies Inc", "size_rank": 50}
+    for rows in ([small, large], [large, small]):
+        assert CompanyMatcher.build(rows).find("Acmeco beats estimates") == ["LRGE"]

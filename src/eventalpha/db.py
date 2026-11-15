@@ -92,16 +92,24 @@ def load_cik_map(engine: Engine) -> dict[str, tuple[str, list[str]]]:
 
 
 def select_unscored_ids(engine: Engine, model: str, questions_version: str, limit: int) -> list[int]:
+    """Mostly newest first (signals need fresh news), with a quarter of each batch taken from the
+    oldest end, so a backlog drains even while new articles keep arriving faster than the limit."""
     scored = (
         select(article_scores.c.article_id)
         .where(article_scores.c.model == model)
         .where(article_scores.c.questions_version == questions_version)
     )
-    stmt = (
-        select(articles.c.id).where(articles.c.id.not_in(scored)).order_by(articles.c.published_at.desc()).limit(limit)
-    )
+    unscored = select(articles.c.id).where(articles.c.id.not_in(scored))
+    oldest_n = limit // 4
     with engine.connect() as conn:
-        return [r.id for r in conn.execute(stmt)]
+        newest = [r.id for r in conn.execute(unscored.order_by(articles.c.published_at.desc()).limit(limit - oldest_n))]
+        oldest = [
+            r.id
+            for r in conn.execute(
+                unscored.where(articles.c.id.not_in(newest)).order_by(articles.c.published_at.asc()).limit(oldest_n)
+            )
+        ]
+    return newest + oldest
 
 
 def load_articles(engine: Engine, ids: Sequence[int]) -> list[dict[str, Any]]:
@@ -155,6 +163,11 @@ def upsert_rows(engine: Engine, table_name: str, rows: Sequence[Mapping[str, Any
     """Insert-or-update on the given unique key (all non-key columns overwritten)."""
     if not rows:
         return 0
+    columns = set(rows[0])
+    if any(set(r) != columns for r in rows):
+        # A multi-row INSERT takes its column list from the first row; refuse mismatched rows
+        # with a clear error instead of an obscure one from SQLAlchemy.
+        raise ValueError(f"upsert_rows({table_name}): every row must have the same columns")
     table = metadata.tables[table_name]
     stmt = insert(table).values(list(rows))
     stmt = stmt.on_conflict_do_update(

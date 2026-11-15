@@ -45,6 +45,15 @@ def clear(client, kind: str, healthy: Iterable[str]) -> None:
         client.delete(*keys)
 
 
+def forget_resolved(client, kind: str, current: Iterable[str]) -> None:
+    """Forget every reported `kind` problem that is no longer current. Unlike clear(), it
+    doesn't need the healthy names: a fixed import error simply drops off the error list."""
+    keep = {_KEY.format(kind=kind, name=n) for n in current}
+    stale = [k for k in client.scan_iter(_KEY.format(kind=kind, name="*")) if k not in keep]
+    if stale:
+        client.delete(*stale)
+
+
 def format_alert(paused: Sequence[str], broken: Sequence[str]) -> str | None:
     if not (paused or broken):
         return None

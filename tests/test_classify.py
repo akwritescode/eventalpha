@@ -104,3 +104,20 @@ def test_typesafe_adapter_maps_questions_and_answers():
     assert type(sent["questions"]["company_specific"]).__name__ == "Noul"
     row = to_score_row(1, result)
     assert row["model"] == "typesafe:jev-1.14.0" and row["sentiment"] == "bearish" and row["materiality"] == 2.8
+
+
+class IncompleteClassifier(FakeClassifier):
+    """A provider that leaves out a question for one article."""
+
+    async def classify(self, state, questions):
+        result = neutral_result()
+        if "partial" in state:
+            result.scales.pop("materiality")
+        return result
+
+
+def test_an_incomplete_answer_fails_one_article_not_the_batch():
+    others = [ARTICLE | {"id": i} for i in range(1, 25)]
+    partial = ARTICLE | {"id": 99, "body": "partial"}
+    rows, failed = asyncio.run(classify_articles(IncompleteClassifier(), [*others, partial]))
+    assert len(rows) == 24 and failed == [99]

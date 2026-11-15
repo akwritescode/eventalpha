@@ -98,7 +98,13 @@ async def classify_articles(
             except ClassifierError as exc:
                 log.warning("classification failed for article %s: %s", article["id"], exc)
                 return None
-            return to_score_row(article["id"], result)
+            try:
+                return to_score_row(article["id"], result)
+            except (KeyError, TypeError, ValueError) as exc:
+                # An answer missing a question (or with a malformed value) fails this article
+                # only; raising here would cancel the whole gather and lose the batch.
+                log.warning("incomplete classification for article %s: %r", article["id"], exc)
+                return None
 
     results = await asyncio.gather(*(one(a) for a in articles))
     rows = [r for r in results if r is not None]

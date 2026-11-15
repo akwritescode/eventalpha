@@ -123,8 +123,10 @@ def insider_buys(engine: Engine, since: datetime, min_value: float = 100_000) ->
             WHERE transaction_code = 'P' AND NOT is_derivative AND transaction_date >= current_date - 30
             GROUP BY ticker
         )
-        SELECT r.*, c.insiders_30d FROM recent r JOIN cluster c USING (ticker)
-        ORDER BY c.insiders_30d DESC, r.value DESC""")
+        -- LEFT JOIN: a purchase filed late (traded more than 30 days ago) has no cluster row
+        -- but is still a purchase by at least one insider.
+        SELECT r.*, coalesce(c.insiders_30d, 1) AS insiders_30d FROM recent r LEFT JOIN cluster c USING (ticker)
+        ORDER BY insiders_30d DESC, r.value DESC""")
     with engine.connect() as conn:
         return [dict(r._mapping) for r in conn.execute(sql, {"since": since, "min_value": min_value})]
 

@@ -215,7 +215,9 @@ class CompanyMatcher:
                 primary[row["cik"]] = row
         patterns: list[_Pattern] = []
         seen: set[str] = set()
-        for row in primary.values():
+        # Largest company first, so a short name shared by two companies goes to the bigger one
+        # whatever order the rows came in.
+        for row in sorted(primary.values(), key=lambda r: r.get("size_rank") or 10**9):
             rank, name = row.get("size_rank") or 10**9, normalize_name(row["name"])
             words = name.split()
             key = name.lower()

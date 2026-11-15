@@ -59,9 +59,12 @@ def ping_healthcheck(settings: Settings, suffix: str = "") -> None:
 def format_task_failure(context: dict[str, Any]) -> str:
     ti = context["task_instance"]
     exc = context.get("exception")
+    # None on some task instances: comparing it with >= would raise inside the failure
+    # callback and hide the real failure.
+    map_index = getattr(ti, "map_index", -1)
     return (
         f"🔴 <b>{html.escape(ti.dag_id)}</b> · {html.escape(ti.task_id)}"
-        f"{f' [{ti.map_index}]' if getattr(ti, 'map_index', -1) >= 0 else ''}\n"
+        f"{f' [{map_index}]' if isinstance(map_index, int) and map_index >= 0 else ''}\n"
         f"run: <code>{html.escape(str(context.get('run_id')))}</code>\n"
         f"try {ti.try_number}: {html.escape(repr(exc)[:500]) if exc else 'failed'}"
     )
