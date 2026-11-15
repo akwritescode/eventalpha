@@ -290,5 +290,11 @@ CREATE TABLE signals (
 
 UPDATE alembic_version SET version_num='45fd705c4233' WHERE alembic_version.version_num = 'e6fd1042f7a3';
 
+-- Running upgrade 45fd705c4233 -> 41b65a6ba799
+
+ALTER TABLE signals ADD COLUMN message TEXT;
+
+UPDATE alembic_version SET version_num='41b65a6ba799' WHERE alembic_version.version_num = '45fd705c4233';
+
 COMMIT;
 

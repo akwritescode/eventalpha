@@ -27,7 +27,8 @@ SERIES: dict[str, str] = {
     "CUUR0000SA0L1E": "CPI-U, core: all items less food and energy (NSA index)",
     "CES0000000001": "Total nonfarm employment (thousands, SA)",
     "LNS14000000": "Unemployment rate (SA, %)",
-    "WPUFD4": "PPI, final demand (index)",
+    "WPSFD4": "PPI, final demand (SA index): the headline monthly change",
+    "WPUFD4": "PPI, final demand (NSA index)",
 }
 
 

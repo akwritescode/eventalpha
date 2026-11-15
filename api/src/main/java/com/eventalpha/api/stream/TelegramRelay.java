@@ -37,6 +37,8 @@ class TelegramRelay {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramRelay.class);
     static final String GROUP = "telegram";
+    /** Stream ID the relay started after: entries up to here were never sent to the channel. */
+    static final String SINCE_KEY = "eventalpha:relay:telegram:since";
 
     private final StringRedisTemplate redis;
     private final RestClient telegram;
@@ -84,6 +86,11 @@ class TelegramRelay {
                 throw e;
             }
         }
+        // First run only: remember the starting point, so the channel preview never shows
+        // events that were in the stream before the relay existed (they were never posted).
+        var groups = redis.opsForStream().groups(EventStreamReader.STREAM);
+        groups.stream().filter(g -> GROUP.equals(g.groupName())).findFirst()
+                .ifPresent(g -> redis.opsForValue().setIfAbsent(SINCE_KEY, g.lastDeliveredId()));
     }
 
     /** Spring wraps the driver's error ("Error in execution"); BUSYGROUP is in the cause chain. */

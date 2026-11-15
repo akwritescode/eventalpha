@@ -97,7 +97,7 @@ def maintenance():
         pct = 100 * usage.used / usage.total
         if pct >= DISK_ALERT_PCT:
             send_telegram(settings(), f"🟠 <b>EventAlpha disk</b> at {pct:.0f}% "
-                                      f"({usage.free / 1e9:.1f} GB free)")
+                                      f"({usage.free / 1e9:.1f} GB free)", ops=True)
         return round(pct, 1)
 
     backup_warehouse() >> clean_metadata >> prune_logs >> check_disk()

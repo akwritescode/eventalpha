@@ -23,6 +23,5 @@ public record ArticleView(
             double materiality,
             double companySpecific,
             Map<String, Double> events,
-            String model,
             Instant scoredAt) {}
 }

@@ -43,6 +43,15 @@ def _target_start(period: str) -> date:
     return date(int(year), int(month), 1)
 
 
+def normalize_period(period: str) -> str:
+    """The source writes months unpadded ("2026-9"), which sorts after "2026-11" as text.
+    Zero-pad so periods sort correctly and match "%Y-%m" lookups."""
+    if ":Q" in period:
+        return period
+    year, month = period.split("-")
+    return f"{int(year)}-{int(month):02d}"
+
+
 def vintage_date(label: str, period: str) -> date:
     """Vintage labels are 'MM/DD' without a year. Nowcasting for a period starts in its first
     month and runs until the release, which can be in the following year (Dec -> Jan)."""
@@ -56,7 +65,7 @@ def parse_charts(horizon: str, charts: list[dict], last_n_periods: int = 3) -> l
     """Rows for the most recent target periods (older periods are final and never change)."""
     rows: list[dict[str, Any]] = []
     for chart in charts[-last_n_periods:]:
-        period = chart["chart"]["subcaption"]  # "2026-11" or "2026:Q4"
+        period = normalize_period(chart["chart"]["subcaption"])  # "2026-11" or "2026:Q4"
         labels = [c["label"] for c in chart["categories"][0]["category"]]
         by_name = {d["seriesname"]: [_dec(x.get("value")) for x in d.get("data", [])] for d in chart["dataset"]}
         for name, measure in MEASURES.items():

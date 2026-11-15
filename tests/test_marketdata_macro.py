@@ -114,6 +114,15 @@ from eventalpha.sec.current import parse_feed  # noqa: E402
 from eventalpha.sessions import close_relative_due  # noqa: E402
 
 
+def test_nowcast_months_are_zero_padded():
+    from eventalpha.macro.nowcast import normalize_period
+
+    assert normalize_period("2026-9") == "2026-09" and normalize_period("2026-11") == "2026-11"
+    assert normalize_period("2026:Q4") == "2026:Q4"
+    assert sorted(["2026-9", "2026-11"]) == ["2026-11", "2026-9"]  # why: unpadded text sorts wrong
+    assert sorted([normalize_period("2026-9"), "2026-11"]) == ["2026-09", "2026-11"]
+
+
 def test_nowcast_vintages_cross_year_and_quarters():
     assert vintage_date("12/30", "2026-12") == date(2026, 12, 30)
     assert vintage_date("01/12", "2026-12") == date(2027, 1, 12)

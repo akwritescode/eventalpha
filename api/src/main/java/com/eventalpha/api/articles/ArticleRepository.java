@@ -57,7 +57,7 @@ public class ArticleRepository {
         String sql = "WITH " + Sql.LATEST_SCORES + """
                 SELECT a.id, a.source, a.form_type, a.title, a.url, a.company, a.tickers, a.sec_items,
                        a.published_at, s.sentiment, s.sentiment_score, s.materiality, s.company_specific,
-                       s.events::text AS events, s.model, s.scored_at
+                       s.events::text AS events, s.scored_at
                 FROM articles a
                 %s latest_scores s ON s.article_id = a.id
                 WHERE %s
@@ -79,7 +79,6 @@ public class ArticleRepository {
                 rs.getDouble("materiality"),
                 rs.getDouble("company_specific"),
                 json.readValue(rs.getString("events"), EVENTS),
-                rs.getString("model"),
                 Sql.instant(rs, "scored_at"));
         return new ArticleView(
                 rs.getLong("id"),

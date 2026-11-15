@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import fakeredis
 
-from eventalpha.event_stream import STREAM, publish_alerts
+from eventalpha.event_stream import FEED_STREAM, STREAM, article_feed_items, publish_alerts, publish_feed_items
 
 ARTICLE = {
     "id": 2, "title": "AAON 8-K: Guidance cut", "tickers": ["AAON"], "form_type": "8-K",
@@ -31,3 +31,21 @@ def test_publishes_only_material_company_news_once():
     assert fields["article_id"] == "2" and fields["tickers"] == "AAON"
     assert fields["events"] == "guidance_lowered,earnings_results"  # by probability, >= 0.7 only
     assert fields["published_at"] == "2026-11-13T21:00:00+00:00"
+
+
+def test_no_model_identifiers_leave_the_pipeline():
+    r = fakeredis.FakeRedis(decode_responses=True)
+    publish_alerts(r, [ARTICLE], [score(2, 2.8)])
+    [(_, fields)] = r.xrange(STREAM)
+    assert "model" not in fields and not any("jev" in v for v in fields.values())
+
+
+def test_every_scored_article_goes_to_the_feed_stream_once():
+    r = fakeredis.FakeRedis(decode_responses=True)
+    routine = ARTICLE | {"id": 3, "source": "rss:prnewswire_all", "form_type": None}
+    items = article_feed_items([ARTICLE, routine], [score(2, 2.8), score(3, 1.0)])
+    assert publish_feed_items(r, items) == 2
+    assert publish_feed_items(r, items) == 0  # retried task: nothing new
+    got = {f["ref"]: f for _, f in r.xrange(FEED_STREAM)}
+    assert got["article:2"]["impact"] == "high" and got["article:2"]["kind"] == "sec"
+    assert got["article:3"]["impact"] == "normal" and got["article:3"]["kind"] == "news"

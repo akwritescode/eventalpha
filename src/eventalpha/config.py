@@ -28,6 +28,7 @@ class Settings:
     raw_bucket: str | None
     telegram_bot_token: str | None
     telegram_chat_id: str | None
+    telegram_ops_chat_id: str | None
     healthchecks_ping_url: str | None
     redis_url: str | None
     market_data_provider: str
@@ -52,7 +53,8 @@ class Settings:
             # Set in production: raw landing goes to object storage instead of local disk.
             raw_bucket=_optional("RAW_BUCKET"),
             telegram_bot_token=_optional("TELEGRAM_BOT_TOKEN"),
-            telegram_chat_id=_optional("TELEGRAM_CHAT_ID"),
+            telegram_chat_id=_optional("TELEGRAM_CHAT_ID"),  # the public alerts channel
+            telegram_ops_chat_id=_optional("TELEGRAM_OPS_CHAT_ID"),  # pipeline failures; never the channel
             healthchecks_ping_url=_optional("HEALTHCHECKS_PING_URL"),
             redis_url=_optional("REDIS_URL"),
             market_data_provider=os.environ.get("MARKET_DATA_PROVIDER", "tradier"),

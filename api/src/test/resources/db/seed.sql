@@ -35,3 +35,35 @@ VALUES ('0000000001-26-000001', 0, '4', '824142', 'AAON', 'AAON', '1', 'Jane CEO
 INSERT INTO sec_filings (accession, family, form_type, cik, company, date_filed, status, rows, detail)
 VALUES ('0001628280-26-073758', 'events', '8-K', '824142', 'AAON, INC.', current_date - 1, 'loaded', 1, NULL),
        ('0001628280-26-000999', 'events', '8-K', '824142', 'AAON, INC.', current_date - 1, 'failed', 0, '503');
+
+INSERT INTO signals (signal_type, session_date, generated_at, score, confidence, payload, inputs_as_of)
+VALUES ('spx_overnight', current_date - 1, now() - interval '20 hours', 0.04, 0.4,
+        '{"counts": {"company_specific": 369, "megacap_articles": 0}}', '{"articles_scored": "2026-11-14T20:14:00Z"}'),
+       ('spx_overnight', current_date - 2, now() - interval '44 hours', -0.2, 0.5, '{}', '{}'),
+       ('premarket', current_date - 1, now() - interval '27 hours', 0.3, 1.0, '{"tickers": []}', '{}');
+
+INSERT INTO econ_events (source, event_key, title, event_date, scheduled_at, importance)
+VALUES ('bls', 'cpi', 'Consumer Price Index', current_date + 3, now() + interval '3 days', 'high'),
+       ('fred', 'gdp', 'Gross Domestic Product', current_date + 30, NULL, 'high');
+
+INSERT INTO earnings_events (ticker, event_date, description, status, fiscal_year, source)
+VALUES ('NVDA', current_date + 2, 'NVIDIA Q3 Earnings Result', 'Confirmed', 2027, 'tradier');
+
+INSERT INTO inflation_nowcasts (horizon, target_period, measure, vintage, value, actual)
+VALUES ('mom', '2026-11', 'cpi', current_date - 2, 0.12, NULL),
+       ('mom', '2026-11', 'cpi', current_date - 1, 0.135, NULL),
+       ('mom', '2026-10', 'cpi', current_date - 30, 0.242, 0.35);
+
+-- A CPI release two days ago for the prior month: BLS SA index up 0.30%, nowcast said 0.20%.
+INSERT INTO econ_events (source, event_key, title, event_date, scheduled_at, importance)
+VALUES ('bls', 'cpi-past', 'Consumer Price Index', current_date - 2,
+        ((current_date - 2) + time '08:30') AT TIME ZONE 'America/New_York', 'high');
+INSERT INTO macro_observations (source, series_id, period, value, preliminary)
+VALUES ('bls', 'CUSR0000SA0', (date_trunc('month', current_date - 2) - interval '1 month')::date, 300.900, false),
+       ('bls', 'CUSR0000SA0', (date_trunc('month', current_date - 2) - interval '2 month')::date, 300.000, false),
+       ('bls', 'CUSR0000SA0', (date_trunc('month', current_date - 2) - interval '3 month')::date, 299.400, false);
+INSERT INTO inflation_nowcasts (horizon, target_period, measure, vintage, value, actual)
+VALUES ('mom', to_char(date_trunc('month', current_date - 2) - interval '1 month', 'YYYY-MM'), 'cpi', current_date - 3, 0.20, NULL);
+
+UPDATE signals SET message = '<b>SPX overnight</b>
+neutral +0.04' WHERE signal_type = 'spx_overnight' AND session_date = current_date - 1;

@@ -139,6 +139,7 @@ Everything listens on `127.0.0.1` only.
 | API health | http://localhost:8081/actuator/health | `UP` when Postgres and Redis are reachable |
 | Live event stream | `curl -N http://localhost:8081/api/v1/stream/events` | Server-Sent Events: prints `:connected`, then each high-impact event as it's published |
 | **Warehouse (Postgres 18)** | `localhost:5433`, db / user / password `eventalpha` | Postico, DBeaver, `psql -h localhost -p 5433 -U eventalpha` |
+| **Web UI** | http://localhost:3000 | `cd web && npm start`, see below |
 | **Redis Insight** | http://localhost:5540 | Optional, see below |
 | Task logs (files) | `./logs/dag_id=…/run_id=…/task_id=…/attempt=N.log` | Same logs as the Airflow UI |
 | Raw landing zone | `./data/raw/<source>/dt=YYYY-MM-DD/*.jsonl` | What each run fetched, before any database write |
@@ -166,6 +167,26 @@ af dags trigger signal_spx_overnight \
 docker compose ps                                # container health
 docker compose logs -f --tail 100 api            # follow a service's logs
 ```
+
+### Web UI (Market Intelligence Stream)
+
+React 18 + TypeScript + MUI 5 + Recharts (Create React App), in `web/`.
+
+```bash
+cd web
+npm install
+cp .env.example .env.local      # set REACT_APP_TELEGRAM_URL to the channel invite link
+npm start                        # → http://localhost:3000 (talks to the API on :8081)
+```
+
+* One stream of SEC filings, news, released macro data (forecast / actual / surprise) and
+  trading signals, filterable by type; cards expand to show extracted facts, classifier
+  probabilities, a signal's contributing events, and related events (shared tickers within 3 days).
+* New events arrive by **push**: the page holds a Server-Sent Events connection to
+  `/api/v1/stream/events` and refreshes the stream when an event lands; a slow timed refresh
+  (2 min) covers items the stream doesn't carry.
+* "Subscribe to Alerts" (Telegram) sits in the sticky top bar, so it's always in view.
+* Before shipping: `CI=true npm run build` (fails on any lint warning).
 
 ### Looking at Redis (the live event stream)
 

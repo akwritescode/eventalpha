@@ -44,10 +44,21 @@ def _publish(signal) -> dict:
     from eventalpha.db import upsert_rows
     from eventalpha.signals.render import render_premarket, render_spx_overnight
 
-    upsert_rows(engine(), "signals", [signal.row()], key=["signal_type", "session_date"])
     text = render_spx_overnight(signal) if signal.signal_type == "spx_overnight" else render_premarket(signal)
+    # The exact channel message is stored with the signal; the web UI's channel preview shows it.
+    upsert_rows(engine(), "signals", [signal.row() | {"message": text}], key=["signal_type", "session_date"])
     print(text)
     send_telegram(settings(), text)
+    if settings().redis_url:
+        import redis
+
+        from eventalpha.event_stream import feed_fields, publish_feed_items
+
+        title = "SPX overnight signal" if signal.signal_type == "spx_overnight" else "Premarket signal"
+        with redis.Redis.from_url(settings().redis_url, decode_responses=True) as r:
+            publish_feed_items(r, [feed_fields("signal", f"signal:{signal.signal_type}:{signal.session_date}",
+                                               title, impact="high", label="TRADING SIGNAL",
+                                               occurred_at=signal.generated_at.isoformat())])
     return {"score": signal.score, "confidence": signal.confidence}
 
 

@@ -42,14 +42,20 @@ class EventStreamController {
         this.maxClients = maxClients;
     }
 
-    @Operation(summary = "Server-Sent Events feed of high-impact events; resume with the Last-Event-ID header")
+    @Operation(summary = "Server-Sent Events. stream=events (default): high-impact events; stream=feed: every new "
+            + "item in the Market Intelligence Stream. Resume with the Last-Event-ID header.")
     @GetMapping(path = "/api/v1/stream/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    SseEmitter stream(@RequestHeader(value = "Last-Event-ID", required = false) String lastEventId) {
+    SseEmitter stream(@RequestHeader(value = "Last-Event-ID", required = false) String lastEventId,
+                      @org.springframework.web.bind.annotation.RequestParam(defaultValue = "events") String stream) {
+        String key = EventStreamReader.STREAMS.get(stream);
+        if (key == null) {
+            throw new IllegalArgumentException("stream must be one of " + EventStreamReader.STREAMS.keySet());
+        }
         if (clients.incrementAndGet() > maxClients) {
             clients.decrementAndGet();
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "too many stream clients");
         }
-        String start = lastEventId != null && STREAM_ID.matcher(lastEventId).matches() ? lastEventId : reader.latestId();
+        String start = lastEventId != null && STREAM_ID.matcher(lastEventId).matches() ? lastEventId : reader.latestId(key);
         var emitter = new SseEmitter(MAX_CONNECTION.toMillis());
         var closed = new AtomicBoolean();
         Runnable close = () -> {
@@ -60,11 +66,11 @@ class EventStreamController {
         emitter.onCompletion(close);
         emitter.onTimeout(close);
         emitter.onError(e -> close.run());
-        Thread.ofVirtual().name("sse-events").start(() -> pump(emitter, start, closed));
+        Thread.ofVirtual().name("sse-" + stream).start(() -> pump(emitter, key, start, closed));
         return emitter;
     }
 
-    private void pump(SseEmitter emitter, String start, AtomicBoolean closed) {
+    private void pump(SseEmitter emitter, String key, String start, AtomicBoolean closed) {
         String last = start;
         long lastSentAt = System.nanoTime();
         try {
@@ -72,7 +78,7 @@ class EventStreamController {
             // instead of waiting for the first event or keepalive.
             emitter.send(SseEmitter.event().comment("connected"));
             while (!closed.get()) {
-                var events = reader.readAfter(last, 100);
+                var events = reader.readAfter(key, last, 100);
                 for (var e : events) {
                     emitter.send(SseEmitter.event().id(e.id()).name("event").data(e.fields(), MediaType.APPLICATION_JSON));
                     last = e.id();

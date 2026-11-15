@@ -49,8 +49,33 @@ def macro_data():
                              "value": o.value, "preliminary": o.preliminary})
         return upsert_rows(engine(), "macro_observations", rows, key=["source", "series_id", "period"])
 
-    fred_series()
-    bls_series()
+    @task(trigger_rule="all_done")
+    def announce_releases() -> int:
+        """Push today's already-released economic events to the web UI's stream (once each).
+        Runs after the data tasks, so the card the UI fetches already has its numbers."""
+        import pendulum
+        from sqlalchemy import text
+
+        if not settings().redis_url:
+            return 0
+        import redis
+
+        from eventalpha.event_stream import feed_fields, publish_feed_items
+
+        with engine().connect() as conn:
+            rows = conn.execute(text("""
+                SELECT source, event_key, title, coalesce(scheduled_at,
+                       (event_date + time '08:30') AT TIME ZONE 'America/New_York') AS at
+                FROM econ_events
+                WHERE event_date = :today AND (importance = 'high' OR title LIKE 'Producer Price Index%')
+                  AND coalesce(scheduled_at, (event_date + time '08:30') AT TIME ZONE 'America/New_York') <= now()
+            """), {"today": pendulum.now(NY).date()}).all()
+        items = [feed_fields("macro", f"macro:{r.source}:{r.event_key}", r.title, impact="high",
+                             label="MACRO", occurred_at=r.at.isoformat()) for r in rows]
+        with redis.Redis.from_url(settings().redis_url, decode_responses=True) as client:
+            return publish_feed_items(client, items)
+
+    [fred_series(), bls_series()] >> announce_releases()
 
 
 @dag(schedule="30 10 * * 1-5", start_date=START_DATE, catchup=False, default_args=DEFAULT_ARGS,

@@ -326,4 +326,5 @@ signals = Table(
     Column("confidence", Float),
     Column("payload", JSONB, nullable=False),  # drivers, ranked tickers, macro block
     Column("inputs_as_of", JSONB, nullable=False),  # freshness of every input it used
+    Column("message", Text),  # the Telegram text as sent (shown in the web UI's channel preview)
 )

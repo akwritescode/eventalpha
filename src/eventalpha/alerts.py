@@ -16,13 +16,19 @@ from eventalpha.config import Settings
 log = logging.getLogger(__name__)
 
 
-def send_telegram(settings: Settings, text: str) -> None:
-    if not (settings.telegram_bot_token and settings.telegram_chat_id):
+def send_telegram(settings: Settings, text: str, ops: bool = False) -> None:
+    """Channel messages (signals) by default; `ops=True` for pipeline alerts, which go to
+    TELEGRAM_OPS_CHAT_ID only and are dropped (logged) when it isn't set: subscribers never
+    see operational noise."""
+    chat_id = settings.telegram_ops_chat_id if ops else settings.telegram_chat_id
+    if not (settings.telegram_bot_token and chat_id):
+        if ops:
+            log.warning("ops alert not sent (TELEGRAM_OPS_CHAT_ID unset): %s", text[:200])
         return
     try:
         httpx.post(
             f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
-            json={"chat_id": settings.telegram_chat_id, "text": text, "parse_mode": "HTML",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
                   "disable_web_page_preview": True},
             timeout=10,
         ).raise_for_status()

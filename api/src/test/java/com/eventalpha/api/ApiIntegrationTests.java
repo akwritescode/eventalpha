@@ -85,7 +85,8 @@ class ApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(2)))
                 .andExpect(jsonPath("$.data[0].id").value(2)) // newest first
-                .andExpect(jsonPath("$.data[1].score.model").value("typesafe:jev-1.14.0"))
+                .andExpect(jsonPath("$.data[1].score.model").doesNotExist()) // model ids stay internal
+                .andExpect(jsonPath("$.data[1].score.sentimentScore").value(0.7)) // newest score wins
                 .andExpect(jsonPath("$.data[1].score.sentiment").value("bullish"))
                 .andExpect(jsonPath("$.data[1].tickers[0]").value("AAON"))
                 .andExpect(jsonPath("$.dataAsOf", notNullValue()));
@@ -125,6 +126,90 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.data[0].family").value("events"))
                 .andExpect(jsonPath("$.data[0].loaded").value(1))
                 .andExpect(jsonPath("$.data[0].failed").value(1));
+    }
+
+    @Test
+    void latestSignalPerTypeWithPayload() throws Exception {
+        mvc.perform(get("/api/v1/signals/latest"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(2)))
+                .andExpect(jsonPath("$.data[1].signalType").value("spx_overnight"))
+                .andExpect(jsonPath("$.data[1].score").value(0.04)) // the newer of the two sessions
+                .andExpect(jsonPath("$.data[1].payload.counts.company_specific").value(369));
+    }
+
+    @Test
+    void dashboardReadModels() throws Exception {
+        mvc.perform(get("/api/v1/stats/sentiment-daily")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[*].bullish", notNullValue()));
+        mvc.perform(get("/api/v1/insiders/buys")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].ticker").value("AAON"))
+                .andExpect(jsonPath("$.data[0].insiders30d").value(1));
+        mvc.perform(get("/api/v1/calendar/upcoming")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.economic", hasSize(1))) // GDP is outside the 14-day window
+                .andExpect(jsonPath("$.data.earnings[0].ticker").value("NVDA"));
+        mvc.perform(get("/api/v1/macro/nowcast")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].targetPeriod").value("2026-11"))
+                .andExpect(jsonPath("$.data[0].value").value(0.135))
+                .andExpect(jsonPath("$.data[1].actual").value(0.35));
+    }
+
+    @Test
+    void feedMergesArticlesMacroAndSignalsNewestFirst() throws Exception {
+        mvc.perform(get("/api/v1/feed"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.type == 'sec')]", hasSize(2)))
+                .andExpect(jsonPath("$.data[?(@.type == 'signal')]", hasSize(3)))
+                .andExpect(jsonPath("$.data[?(@.id == 'article:2')].label").value("SEC · 8-K"))
+                .andExpect(jsonPath("$.data[?(@.id == 'article:2')].classification.sentiment").value("bearish"));
+    }
+
+    @Test
+    void cpiCardHasForecastActualAndSurprise() throws Exception {
+        mvc.perform(get("/api/v1/feed").param("types", "macro"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(1))) // the future CPI release isn't in the stream
+                .andExpect(jsonPath("$.data[0].label").value("MACRO · CPI"))
+                .andExpect(jsonPath("$.data[0].title").value("US CPI comes in above forecast"))
+                .andExpect(jsonPath("$.data[0].macro.rows[0].forecast").value(0.2))
+                .andExpect(jsonPath("$.data[0].macro.rows[0].actual").value(0.3))
+                .andExpect(jsonPath("$.data[0].macro.rows[0].prior").value(0.2))
+                .andExpect(jsonPath("$.data[0].macro.rows[0].surprise").value(0.1))
+                .andExpect(jsonPath("$.data[0].macro.verdict").value("Inflationary surprise"));
+    }
+
+    @Test
+    void feedRejectsUnknownTypes() throws Exception {
+        mvc.perform(get("/api/v1/feed").param("types", "sec,crypto")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void channelPreviewShowsSignalMessagesAndEventsAsSent() throws Exception {
+        String stream = "eventalpha:events";
+        // Posted before the relay existed: must NOT appear in the preview.
+        redis.opsForStream().add(StreamRecords.string(Map.of("article_id", "8", "title", "Never posted",
+                "tickers", "OLD", "sentiment", "neutral", "sentiment_score", "0.0", "materiality", "2.6",
+                "events", "", "url", "https://example.com/8")).withStreamKey(stream));
+        // The relay starts here (as TelegramRelay.ensureGroup does) ...
+        redis.opsForStream().createGroup(stream, org.springframework.data.redis.connection.stream.ReadOffset.latest(), "telegram");
+        redis.opsForValue().set("eventalpha:relay:telegram:since",
+                redis.opsForStream().groups(stream).stream().filter(g -> g.groupName().equals("telegram")).findFirst().orElseThrow().lastDeliveredId());
+        // ... and delivers this one.
+        redis.opsForStream().add(StreamRecords.string(Map.of("article_id", "9", "title", "Acme cuts guidance",
+                "tickers", "ACME", "sentiment", "bearish", "sentiment_score", "-0.900", "materiality", "2.90",
+                "events", "guidance_lowered", "url", "https://example.com/9", "model", "internal"))
+                .withStreamKey(stream));
+        redis.opsForStream().read(org.springframework.data.redis.connection.stream.Consumer.from("telegram", "test"),
+                org.springframework.data.redis.connection.stream.StreamOffset.create(stream,
+                        org.springframework.data.redis.connection.stream.ReadOffset.lastConsumed()));
+        mvc.perform(get("/api/v1/channel/preview"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.channelName").value("EventAlpha Alerts"))
+                .andExpect(jsonPath("$.data.posts[0].kind").value("event")) // newest first
+                .andExpect(jsonPath("$.data.posts[0].html").value(org.hamcrest.Matchers.containsString("Acme cuts guidance")))
+                .andExpect(jsonPath("$.data.posts[0].html").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("internal"))))
+                .andExpect(jsonPath("$.data.posts[?(@.html =~ /.*Never posted.*/)]", hasSize(0)))
+                .andExpect(jsonPath("$.data.posts[?(@.kind == 'signal')].html").value(org.hamcrest.Matchers.hasItem("<b>SPX overnight</b>\nneutral +0.04")));
     }
 
     @Test

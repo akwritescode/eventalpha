@@ -71,7 +71,7 @@ def notify_failure(context) -> None:
     """on_failure_callback: fires after the last retry, so one alert per real failure."""
     from eventalpha.alerts import format_task_failure, send_telegram
 
-    send_telegram(settings(), format_task_failure(context))
+    send_telegram(settings(), format_task_failure(context), ops=True)
 
 
 # Shared by every DAG: retries with backoff, then a Telegram alert.

@@ -15,6 +15,7 @@ from airflow.sdk import dag, task
 from eventalpha_common import DEFAULT_ARGS, NY, START_DATE, engine, market_data, settings, table_asset, universe
 
 LOOKAHEAD_DAYS = 45
+LOOKBACK_DAYS = 30  # keep recent releases too: the web stream shows them with their actual values
 
 
 @dag(schedule="0 6 * * 1-5", start_date=START_DATE, catchup=False, default_args=DEFAULT_ARGS,
@@ -31,13 +32,14 @@ def calendars_daily():
         from eventalpha.macro.fred import FredClient
 
         today = pendulum.now(NY).date()
+        start = today - timedelta(days=LOOKBACK_DAYS)
         end = today + timedelta(days=LOOKAHEAD_DAYS)
         s = settings()
-        rows = bls_event_rows(BlsClient(s.bls_api_key, s.sec_user_agent).release_calendar(), today, end)
-        rows += fred_event_rows(FredClient(s.fred_api_key).release_dates(today, end))
+        rows = bls_event_rows(BlsClient(s.bls_api_key, s.sec_user_agent).release_calendar(), start, end)
+        rows += fred_event_rows(FredClient(s.fred_api_key).release_dates(start, end))
         fed = httpx.get(FOMC_URL, headers={"User-Agent": s.sec_user_agent}, timeout=30)
         fed.raise_for_status()
-        rows += fomc_event_rows(fed.text, today, end)
+        rows += fomc_event_rows(fed.text, start, end)
         print(f"{len(rows)} economic events through {end}")
         return upsert_rows(engine(), "econ_events", rows, key=["source", "event_key"])
 

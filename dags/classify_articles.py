@@ -74,10 +74,11 @@ def classify_articles():
         if rows and settings().redis_url:  # after the commit: the stream never runs ahead of the DB
             import redis
 
-            from eventalpha.event_stream import publish_alerts
+            from eventalpha.event_stream import article_feed_items, publish_alerts, publish_feed_items
 
             with redis.Redis.from_url(settings().redis_url, decode_responses=True) as r:
-                published = publish_alerts(r, articles, rows)
+                published = publish_alerts(r, articles, rows)  # high impact → Telegram relay
+                publish_feed_items(r, article_feed_items(articles, rows))  # everything → web UI
         if rows and rows[0]["model"] != classifier.model_id:
             print(f"warning: requested {classifier.model_id}, provider answered as {rows[0]['model']}")
         if articles and not rows:
