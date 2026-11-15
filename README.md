@@ -17,6 +17,10 @@ Sources are limited to ones that allow automated access: SEC EDGAR (public data 
 [fair-access policy](https://www.sec.gov/os/accessing-edgar-data)) and RSS feeds published
 for syndication. No scraping.
 
+![The Market Intelligence Stream: trading signals, SEC filings, news and macro releases in one
+feed, with news sentiment, an economic and earnings calendar, the inflation nowcast and insider
+buying alongside (shown with the demo data from `make seed`)](docs/images/stream.jpg)
+
 | Layer | Stack |
 |---|---|
 | Orchestration | Apache Airflow 3.4 (TaskFlow, assets, dynamic task mapping, pools) |
@@ -109,23 +113,56 @@ calendar, the Cleveland Fed's inflation nowcasts, and the Tradier brokerage API.
 
 ## API
 
-```
-GET /api/v1/articles?ticker=AAON&formType=8-K&days=7
-GET /api/v1/events?type=guidance_lowered&minProb=0.8
-GET /api/v1/tickers/{ticker}/sentiment?days=30
-GET /api/v1/tickers/{ticker}/insider-trades?days=90&openMarketOnly=true
-GET /api/v1/status/sec?days=14
-GET /api/v1/stream/events          # Server-Sent Events; resumes from Last-Event-ID
-```
+A public, read-only HTTP API (no key; rate limited per IP). Every response is
+`{"data": ..., "dataAsOf": "<timestamp>"}` so clients can show how fresh the data is.
 
-OpenAPI UI at http://localhost:8081/docs, health at `/actuator/health`.
+| Endpoint | Returns |
+|---|---|
+| `GET /api/v1/feed?types=sec,news,macro,signal&days=7&limit=100&ticker=` | The Market Intelligence Stream, newest first; page with `before` + `beforeId` (the last item's `occurredAt` and `id`) |
+| `GET /api/v1/stream/events?stream=events\|feed` | Server-Sent Events: high-impact events, or every new stream item; resumes from `Last-Event-ID` |
+| `GET /api/v1/articles?ticker=AAON&formType=8-K&days=7` | Filings and news with their latest classification |
+| `GET /api/v1/events?type=guidance_lowered&minProb=0.8` | Items the classifier flags with an event type |
+| `GET /api/v1/tickers/{ticker}/sentiment?days=30` | Daily sentiment for one ticker |
+| `GET /api/v1/tickers/{ticker}/insider-trades?days=90` | Form 4 transactions and net open-market value |
+| `GET /api/v1/signals/latest` | The latest premarket and SPX overnight signals with their inputs |
+| `GET /api/v1/stats/sentiment-daily?days=14` | Market-wide daily sentiment of company-specific news |
+| `GET /api/v1/insiders/buys?days=14` | Largest open-market insider purchases, with 30-day clusters |
+| `GET /api/v1/calendar/upcoming?days=14` | Economic releases and earnings dates (largest company first) |
+| `GET /api/v1/macro/nowcast` | Cleveland Fed inflation nowcast, with the actual once released |
+| `GET /api/v1/channel/preview?limit=20` | What the Telegram alerts channel has posted |
+| `GET /api/v1/status/sec?days=14` | SEC filings processed per day and family (pipeline health) |
+
+OpenAPI UI at http://localhost:8081/docs, health at `/actuator/health`. Request and stream
+examples in Python, JavaScript and curl: [examples/](examples/README.md).
 
 ## Running locally
 
+**Prerequisites:** Docker Desktop (or Docker Engine with Compose v2, ~8 GB RAM for Docker),
+[uv](https://docs.astral.sh/uv/), Node 22, GNU Make. Java 25 only if you work on the API
+outside Docker.
+
 ```bash
-cp .env.example .env          # fill in SEC_USER_AGENT (real contact email) and the API keys
-docker compose up -d          # everything below; first start builds the images (a few minutes)
+git clone https://github.com/akwritescode/eventalpha.git && cd eventalpha
+make setup                    # git hooks, Python and web dependencies, .env from .env.example
 ```
+
+Edit `.env`. Only `SEC_USER_AGENT` is required to start (SEC asks for a name and a real
+contact email, e.g. `"eventalpha you@example.com"`). The API keys enable more sources:
+without `TYPESAFE_API_KEY` nothing is classified, without `TRADIER_BROKER_KEY`/`FRED_API_KEY`
+there are no prices or FRED series. `FERNET_KEY` may stay empty locally (Airflow then stores
+connection passwords unencrypted and logs a warning); production requires one.
+
+```bash
+make up                       # first start builds the images (a few minutes)
+curl -s localhost:8081/actuator/health          # {"status":"UP"} once Postgres and Redis are ready
+docker compose exec airflow-scheduler airflow dags list-import-errors   # "No data found"
+make seed                     # optional: demo data, so the UI isn't empty before the first runs
+cd web && npm start           # web UI on http://localhost:3000
+```
+
+DAGs start paused: unpause the ones you want in the Airflow UI (http://localhost:8080) or with
+`airflow dags unpause <dag_id>` (see [Common commands](#common-commands)). The
+`pipeline_watchdog` DAG reports paused DAGs to the ops chat once Telegram is configured.
 
 After editing `.env`, recreate the containers so they see the new values (Docker reads
 `env_file` only when it creates a container):
@@ -150,7 +187,7 @@ Everything listens on `127.0.0.1` only.
 | **Redis Insight** | http://localhost:5540 | Optional, see below |
 | Task logs (files) | `./logs/dag_id=…/run_id=…/task_id=…/attempt=N.log` | Same logs as the Airflow UI |
 | Raw landing zone | `./data/raw/<source>/dt=YYYY-MM-DD/*.jsonl` | What each run fetched, before any database write |
-| Alerts | Your Telegram channel | Signals and task failures, once `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` are set |
+| Alerts | Telegram | Signals and high-impact events to the channel (`TELEGRAM_CHAT_ID`); task failures, paused DAGs and disk alerts to the ops chat (`TELEGRAM_OPS_CHAT_ID`) |
 
 Airflow's own metadata database (`airflow-db`) isn't exposed; use the Airflow UI or
 `docker compose exec airflow-db psql -U airflow`.
@@ -308,6 +345,8 @@ Economic data: U.S. Bureau of Labor Statistics; FRED, Federal Reserve Bank of St
 * Tradier's session calendar only covers the current year, so next January loads once the year turns.
 * No free official source publishes consensus forecasts; CPI surprise is measured against the
   Cleveland Fed nowcast instead.
+* The web UI is built with Create React App, which is no longer maintained; moving to Vite is
+  planned work (Dependabot holds back major upgrades of the UI stack until then).
 
 ## Roadmap
 

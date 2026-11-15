@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 JAVA_TEST = cd api && ./gradlew test --console=plain
 
-.PHONY: help setup up down lint typecheck test test-python test-api test-web check
+.PHONY: help setup up down seed lint typecheck test test-python test-api test-web check
 
 help:  ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -18,6 +18,9 @@ up:  ## Start the local stack (Airflow, Postgres, Redis, API)
 
 down:  ## Stop the local stack (data volumes are kept)
 	docker compose down
+
+seed:  ## Load demo data into an empty local warehouse (see examples/README.md)
+	docker compose exec -T warehouse-db psql -q -U eventalpha -d eventalpha < examples/demo-data.sql
 
 lint:  ## Ruff (lint + format check) and mypy
 	uv run ruff check .
