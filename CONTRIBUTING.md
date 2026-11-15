@@ -13,6 +13,10 @@ runs it on everything. Editor settings are in `.editorconfig`.
 
 Running the stack locally is covered in the [README](README.md#running-locally).
 
+The web UI builds with Node 22 (CI and Vercel). Change `web/package-lock.json` with Node 22's
+npm (`nvm use` reads `web/.nvmrc`): a newer npm can write a lockfile that Node 22's `npm ci`
+rejects as out of sync.
+
 ## Commit messages: Conventional Commits
 
 Every commit follows [Conventional Commits 1.0](https://www.conventionalcommits.org/en/v1.0.0/):
