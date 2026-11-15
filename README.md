@@ -139,7 +139,7 @@ Everything listens on `127.0.0.1` only.
 | API health | http://localhost:8081/actuator/health | `UP` when Postgres and Redis are reachable |
 | Live event stream | `curl -N http://localhost:8081/api/v1/stream/events` | Server-Sent Events: prints `:connected`, then each high-impact event as it's published |
 | **Warehouse (Postgres 18)** | `localhost:5433`, db / user / password `eventalpha` | Postico, DBeaver, `psql -h localhost -p 5433 -U eventalpha` |
-| **Web UI** | http://localhost:3000 | `cd web && npm start`, see below |
+| **Web UI** | http://localhost:3000 | Not in Compose: `cd web && npm start`, see [Web UI](#web-ui-market-intelligence-stream) |
 | **Redis Insight** | http://localhost:5540 | Optional, see below |
 | Task logs (files) | `./logs/dag_id=…/run_id=…/task_id=…/attempt=N.log` | Same logs as the Airflow UI |
 | Raw landing zone | `./data/raw/<source>/dt=YYYY-MM-DD/*.jsonl` | What each run fetched, before any database write |
@@ -171,22 +171,49 @@ docker compose logs -f --tail 100 api            # follow a service's logs
 ### Web UI (Market Intelligence Stream)
 
 React 18 + TypeScript + MUI 5 + Recharts (Create React App), in `web/`.
+The web app isn't in Docker Compose locally; run it with the Node dev server next to the stack.
+
+**Run it** (Node 20+; the API must be up on :8081, i.e. `docker compose up -d` first):
 
 ```bash
 cd web
-npm install
-cp .env.example .env.local      # set REACT_APP_TELEGRAM_URL to the channel invite link
-npm start                        # → http://localhost:3000 (talks to the API on :8081)
+npm install                      # first time only
+cp .env.example .env.local       # first time only: API URL (http://localhost:8081) + Telegram invite link
+npm start                        # → opens http://localhost:3000, reloads on save
 ```
 
-* One stream of SEC filings, news, released macro data (forecast / actual / surprise) and
-  trading signals, filterable by type; cards expand to show extracted facts, classifier
-  probabilities, a signal's contributing events, and related events (shared tickers within 3 days).
-* New events arrive by **push**: the page holds a Server-Sent Events connection to
-  `/api/v1/stream/events` and refreshes the stream when an event lands; a slow timed refresh
-  (2 min) covers items the stream doesn't carry.
-* "Subscribe to Alerts" (Telegram) sits in the sticky top bar, so it's always in view.
-* Before shipping: `CI=true npm run build` (fails on any lint warning).
+Stop it with Ctrl-C. If it says *"Something is already running on port 3000"*, an old dev server
+is still alive: `lsof -ti :3000 | xargs kill`, then `npm start` again.
+
+**What to look at** on http://localhost:3000:
+
+* **The stream**: SEC filings, news, released macro data (forecast / actual / surprise) and
+  trading signals, newest first, grouped by day. Tabs filter by type; click a card to expand its
+  facts, probabilities, a signal's contributing events and related events (shared tickers, ±3 days).
+  "Load more" pages back in time.
+* **Side rail**: daily sentiment chart, upcoming calendar, CPI nowcast, recent insider buys.
+* **Subscribe to Alerts** (top bar): previews what's been posted to the Telegram channel, with
+  "Join on Telegram" at the bottom.
+* **Bell** (top bar): browser notifications — *High-impact*, *Everything* or *Off*. Allow
+  notifications when the browser asks. They fire while the site is open in any tab; the tab
+  title shows the unseen count.
+* **Live updates**: new items are pushed over Server-Sent Events (`/api/v1/stream/events?stream=feed`),
+  so the page needs no refresh. The LIVE / OFFLINE badge above the stream shows whether the connection is up.
+* **Mobile**: the layout works at phone width (DevTools device toolbar, or your phone on the
+  same network via `http://<your-mac-ip>:3000` after adding that origin to
+  `EVENTALPHA_CORS_ALLOWED_ORIGINS` in `.env`, e.g.
+  `http://localhost:3000,http://192.168.1.20:3000`, then `docker compose up -d --force-recreate api`).
+
+**See a notification without waiting for real data**: push a test item onto the feed stream,
+then delete it:
+
+```bash
+docker compose exec redis redis-cli XADD eventalpha:feed '*' kind sec ref test:1 \
+  title "Test filing" label "SEC · 8-K" tickers AAPL impact high sentiment bullish url "" occurred_at ""
+docker compose exec redis redis-cli XDEL eventalpha:feed <id printed above>
+```
+
+Before shipping: `CI=true npm run build` (fails on any lint warning).
 
 ### Looking at Redis (the live event stream)
 
