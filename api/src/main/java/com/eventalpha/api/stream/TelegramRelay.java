@@ -1,6 +1,5 @@
 package com.eventalpha.api.stream;
 
-import java.net.InetAddress;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -10,17 +9,22 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.data.domain.Range;
 import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.PendingMessage;
 import org.springframework.data.redis.connection.stream.ReadOffset;
+import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.connection.stream.StreamReadOptions;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.HtmlUtils;
 
 /**
@@ -39,6 +43,13 @@ class TelegramRelay {
     static final String GROUP = "telegram";
     /** Stream ID the relay started after: entries up to here were never sent to the channel. */
     static final String SINCE_KEY = "eventalpha:relay:telegram:since";
+    /**
+     * One relay per deployment, so a fixed consumer name: a hostname-based name changes every
+     * time the container is recreated and strands that consumer's unacknowledged entries.
+     */
+    static final String CONSUMER = "relay";
+    /** Entries another consumer has held this long are taken over (left by an old consumer name). */
+    static final Duration ORPHAN_IDLE = Duration.ofMinutes(1);
 
     private final StringRedisTemplate redis;
     private final RestClient telegram;
@@ -48,11 +59,11 @@ class TelegramRelay {
 
     TelegramRelay(StringRedisTemplate redis,
                   @Value("${eventalpha.telegram.bot-token}") String botToken,
-                  @Value("${eventalpha.telegram.chat-id}") String chatId) throws Exception {
+                  @Value("${eventalpha.telegram.chat-id}") String chatId) {
         this.redis = redis;
         this.chatId = chatId;
         this.telegram = RestClient.builder().baseUrl("https://api.telegram.org/bot" + botToken).build();
-        this.consumer = Consumer.from(GROUP, InetAddress.getLocalHost().getHostName());
+        this.consumer = Consumer.from(GROUP, CONSUMER);
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -109,12 +120,23 @@ class TelegramRelay {
             try {
                 // Own pending entries first (sent before but never acked), then new ones.
                 ensureGroup(); // no-op once the group exists; recovers if Redis was down at startup
+                claimOrphans();
                 var batch = read(ReadOffset.from("0"));
                 if (batch.isEmpty()) {
                     batch = read(ReadOffset.lastConsumed());
                 }
                 for (var record : batch) {
-                    send(EventStreamReader.toEvent(record).fields());
+                    try {
+                        send(EventStreamReader.toEvent(record).fields());
+                    } catch (HttpClientErrorException e) {
+                        if (e.getStatusCode().value() == 429) {
+                            throw e; // rate limited: back off and retry this entry
+                        }
+                        // Any other 4xx is permanent (bad chat id, malformed message): retrying can
+                        // never succeed and would block every later alert, so drop this one.
+                        log.warn("Telegram rejected event {} (HTTP {}); dropping it",
+                                record.getId(), e.getStatusCode().value());
+                    }
                     redis.opsForStream().acknowledge(EventStreamReader.STREAM, GROUP, record.getId());
                 }
                 backoff = Duration.ofSeconds(2);
@@ -125,7 +147,7 @@ class TelegramRelay {
                 Thread.currentThread().interrupt();
                 return;
             } catch (RuntimeException e) {
-                log.warn("Telegram relay error, retrying in {}: {}", backoff, e.toString());
+                log.warn("Telegram relay error, retrying in {}: {}", backoff, describe(e));
                 try {
                     Thread.sleep(backoff);
                 } catch (InterruptedException ie) {
@@ -136,6 +158,28 @@ class TelegramRelay {
                         ? Duration.ofMinutes(5) : backoff.multipliedBy(2);
             }
         }
+    }
+
+    /** Take over entries pending under other consumer names (e.g. the old hostname-based ones). */
+    private void claimOrphans() {
+        var pending = redis.opsForStream().pending(EventStreamReader.STREAM, GROUP, Range.unbounded(), 100);
+        RecordId[] orphans = pending.stream()
+                .filter(p -> !CONSUMER.equals(p.getConsumerName()))
+                .map(PendingMessage::getId)
+                .toArray(RecordId[]::new);
+        if (orphans.length > 0) {
+            redis.opsForStream().claim(EventStreamReader.STREAM, GROUP, CONSUMER, ORPHAN_IDLE, orphans);
+        }
+    }
+
+    /**
+     * Never log the exception as is: for I/O errors its message contains the request URL, and
+     * the bot token is part of that URL. Class name plus HTTP status is enough to diagnose.
+     */
+    static String describe(Throwable e) {
+        return e instanceof RestClientResponseException r
+                ? e.getClass().getSimpleName() + " (HTTP " + r.getStatusCode().value() + ")"
+                : e.getClass().getSimpleName();
     }
 
     private List<MapRecord<String, Object, Object>> read(ReadOffset offset) {

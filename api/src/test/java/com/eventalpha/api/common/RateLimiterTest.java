@@ -31,4 +31,17 @@ class RateLimiterTest {
         now.addAndGet(15_000);
         assertThat(limiter.acquire("a")).isZero();         // new window
     }
+
+    @Test
+    void trackedClientsStayCappedDuringAFloodOfNewKeys() {
+        var limiter = new RateLimiter(5, 60_000, clock, 3);
+        for (String k : new String[] {"a", "b", "c"}) {
+            assertThat(limiter.acquire(k)).isZero();
+        }
+        assertThat(limiter.acquire("d")).isEqualTo(60);  // map full of active clients: new key refused
+        assertThat(limiter.acquire("a")).isZero();        // known clients keep working
+
+        now.addAndGet(60_000);                            // windows expire: room again
+        assertThat(limiter.acquire("d")).isZero();
+    }
 }

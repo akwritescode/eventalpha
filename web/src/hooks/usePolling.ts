@@ -8,13 +8,15 @@ import { ApiResponse, getJson } from '../api';
 export function usePolling<T>(path: string, intervalMs = 60_000) {
   const [state, setState] = useState<{ data?: ApiResponse<T>; error?: string; loading: boolean }>({ loading: true });
   const timer = useRef<number>();
+  const seq = useRef(0); // only the newest request's response is applied
 
   const load = useCallback(async () => {
+    const mine = ++seq.current;
     try {
       const data = await getJson<T>(path);
-      setState({ data, loading: false });
+      if (mine === seq.current) setState({ data, loading: false });
     } catch (e) {
-      setState((s) => ({ ...s, error: (e as Error).message, loading: false }));
+      if (mine === seq.current) setState((s) => ({ ...s, error: (e as Error).message, loading: false }));
     }
   }, [path]);
 

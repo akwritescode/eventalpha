@@ -4,6 +4,7 @@ import com.eventalpha.api.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -19,6 +20,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 class FeedController {
 
+    /** Newest first, ties by id (descending, String order): the order the cursor pages through. */
+    static final Comparator<FeedItem> NEWEST_FIRST =
+            Comparator.comparing(FeedItem::occurredAt).thenComparing(FeedItem::id).reversed();
+
     private static final Set<String> TYPES = Set.of("sec", "news", "macro", "signal");
 
     private final FeedRepository repo;
@@ -28,15 +33,16 @@ class FeedController {
     }
 
     @Operation(summary = "Market Intelligence Stream: SEC filings, news, released macro data and signals, newest first. "
-            + "Page with `before` = the last item's occurredAt. `ticker` limits it to one company "
+            + "Page with `before` = the last item's occurredAt and `beforeId` = its id. `ticker` limits it to one company "
             + "(its filings and news, and signals it contributed to).")
     @GetMapping("/feed")
     ApiResponse<List<FeedItem>> feed(
             @RequestParam(defaultValue = "sec,news,macro,signal") String types,
             @RequestParam(defaultValue = "7") @Min(1) @Max(60) int days,
             @RequestParam(required = false) Instant before,
+            @RequestParam(required = false) @Pattern(regexp = "[a-z]+:[A-Za-z0-9:._\\-]{1,200}") String beforeId,
             @RequestParam(defaultValue = "100") @Min(1) @Max(300) int limit,
-            @RequestParam(required = false) String ticker) {
+            @RequestParam(required = false) @Pattern(regexp = "[A-Za-z.\\-]{1,10}") String ticker) {
         String symbol = ticker == null || ticker.isBlank() ? null : ticker.trim().toUpperCase();
         var wanted = Set.of(types.toLowerCase().split("\\s*,\\s*"));
         if (!TYPES.containsAll(wanted)) {
@@ -47,14 +53,21 @@ class FeedController {
 
         List<FeedItem> items = new ArrayList<>();
         if (wanted.contains("sec") || wanted.contains("news")) {
-            items.addAll(repo.articles(since, end, limit, wanted.contains("sec"), wanted.contains("news"), symbol));
+            items.addAll(repo.articles(since, end, before == null ? null : beforeId, limit, wanted.contains("sec"),
+                    wanted.contains("news"), symbol));
         }
         // Macro releases aren't about one company, so a ticker view leaves them out.
         if (wanted.contains("macro") && symbol == null) items.addAll(repo.macro(since, end));
         if (wanted.contains("signal")) {
             repo.signals(since, end).stream().filter(s -> symbol == null || mentions(s, symbol)).forEach(items::add);
         }
-        items.sort(Comparator.comparing(FeedItem::occurredAt).reversed());
+        // Keyset paging on (occurredAt, id): items at exactly `before` continue after `beforeId`,
+        // so items that share a timestamp are neither repeated nor skipped across pages.
+        if (before != null) {
+            items.removeIf(i -> !(i.occurredAt().isBefore(before)
+                    || (beforeId != null && i.occurredAt().equals(before) && i.id().compareTo(beforeId) < 0)));
+        }
+        items.sort(NEWEST_FIRST);
         List<FeedItem> page = items.size() > limit ? items.subList(0, limit) : items;
         Instant asOf = page.isEmpty() ? null : page.getFirst().occurredAt();
         return ApiResponse.of(page, asOf);

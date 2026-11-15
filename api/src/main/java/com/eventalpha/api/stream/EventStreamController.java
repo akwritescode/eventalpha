@@ -55,7 +55,13 @@ class EventStreamController {
             clients.decrementAndGet();
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "too many stream clients");
         }
-        String start = lastEventId != null && STREAM_ID.matcher(lastEventId).matches() ? lastEventId : reader.latestId(key);
+        String start;
+        try {
+            start = lastEventId != null && STREAM_ID.matcher(lastEventId).matches() ? lastEventId : reader.latestId(key);
+        } catch (RuntimeException e) {
+            clients.decrementAndGet(); // the close callbacks below don't exist yet: release the slot here
+            throw e;
+        }
         var emitter = new SseEmitter(MAX_CONNECTION.toMillis());
         var closed = new AtomicBoolean();
         Runnable close = () -> {

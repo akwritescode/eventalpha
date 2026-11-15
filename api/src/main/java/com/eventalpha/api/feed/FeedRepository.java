@@ -54,11 +54,21 @@ class FeedRepository {
         this.json = json;
     }
 
+    private static final String ITEM_ID = "('article:' || a.id) COLLATE \"C\"";
+
     // ---------- articles (SEC filings and news) ----------
 
-    List<FeedItem> articles(Instant since, Instant before, int limit, boolean sec, boolean news, String ticker) {
+    /**
+     * Newest first, keyset-paged by (published_at, item id). Several filings often share a
+     * timestamp, so the id breaks ties; COLLATE "C" makes SQL order ids exactly like Java's
+     * String.compareTo, which FeedController sorts and pages with.
+     */
+    List<FeedItem> articles(Instant since, Instant before, String beforeId, int limit, boolean sec, boolean news,
+                            String ticker) {
         String source = sec && news ? "" : sec ? "AND a.source = 'sec_edgar'" : "AND a.source <> 'sec_edgar'";
         if (ticker != null) source += " AND a.tickers @> ARRAY[CAST(:ticker AS varchar)]";
+        String cursor = beforeId == null ? "a.published_at < :before"
+                : "(a.published_at < :before OR (a.published_at = :before AND " + ITEM_ID + " < :beforeId))";
         return jdbc.sql("""
                         WITH latest AS (
                             SELECT DISTINCT ON (article_id) * FROM article_scores ORDER BY article_id, scored_at DESC)
@@ -67,10 +77,11 @@ class FeedRepository {
                                s.sentiment, s.sentiment_score, s.sentiment_confidence, s.p_bullish, s.p_bearish,
                                s.p_neutral, s.materiality, s.company_specific, s.events::text AS events
                         FROM articles a LEFT JOIN latest s ON s.article_id = a.id
-                        WHERE a.published_at >= :since AND a.published_at < :before %s
-                        ORDER BY a.published_at DESC LIMIT :limit""".formatted(source))
+                        WHERE a.published_at >= :since AND %s %s
+                        ORDER BY a.published_at DESC, %s DESC LIMIT :limit""".formatted(cursor, source, ITEM_ID))
                 .param("since", Timestamp.from(since)).param("before", Timestamp.from(before)).param("limit", limit)
                 .param("ticker", ticker == null ? "" : ticker)
+                .param("beforeId", beforeId == null ? "" : beforeId)
                 .query(this::article)
                 .list();
     }
@@ -155,7 +166,7 @@ class FeedRepository {
     List<FeedItem> signals(Instant since, Instant before) {
         return jdbc.sql("""
                         SELECT signal_type, session_date, generated_at, score, confidence, payload::text AS payload
-                        FROM signals WHERE generated_at >= :since AND generated_at < :before""")
+                        FROM signals WHERE generated_at >= :since AND generated_at <= :before""")  // controller pages
                 .param("since", Timestamp.from(since)).param("before", Timestamp.from(before))
                 .query((rs, i) -> signal(rs.getString("signal_type"), rs.getObject("session_date", LocalDate.class),
                         rs.getObject("generated_at", OffsetDateTime.class).toInstant(),
@@ -222,7 +233,9 @@ class FeedRepository {
         var events = jdbc.sql("""
                         SELECT source, event_key, title, event_date, scheduled_at, importance FROM econ_events
                         WHERE coalesce(scheduled_at, (event_date + time '08:30') AT TIME ZONE 'America/New_York')
-                              BETWEEN :since AND least(:before, now())
+                              >= :since
+                          AND coalesce(scheduled_at, (event_date + time '08:30') AT TIME ZONE 'America/New_York')
+                              <= least(:before, now())  -- inclusive: FeedController applies the (time, id) cursor
                           AND (importance = 'high' OR title LIKE 'Producer Price Index%')""")
                 .param("since", Timestamp.from(since)).param("before", Timestamp.from(before))
                 .query((rs, i) -> new Ev(rs.getString("source"), rs.getString("event_key"), rs.getString("title"),

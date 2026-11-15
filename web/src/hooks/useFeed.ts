@@ -16,10 +16,19 @@ export function useFeed(types: FeedType[], pushVersion: number, ticker: string |
   const known = useRef<Set<string>>(new Set());
   // A single company has fewer items, so its view looks further back.
   const query = `types=${types.join(',')}&days=${ticker ? 60 : 30}&limit=${PAGE}${ticker ? `&ticker=${encodeURIComponent(ticker)}` : ''}`;
+  // Stale-response guards: a reply is dropped if the filter changed while it was in flight (a
+  // slow answer for the previous tab must not replace the current one), and a first-page
+  // reply is dropped if a newer first-page request has started since.
+  const currentQuery = useRef(query);
+  currentQuery.current = query;
+  const firstSeq = useRef(0);
 
   const loadFirst = useCallback(async () => {
+    const mine = ++firstSeq.current;
+    const stale = () => mine !== firstSeq.current || currentQuery.current !== query;
     try {
       const resp = await getJson<FeedItem[]>(`/api/v1/feed?${query}`);
+      if (stale()) return;
       const incoming = resp.data;
       const added = incoming.filter((i) => known.current.size > 0 && !known.current.has(i.id)).map((i) => i.id);
       incoming.forEach((i) => known.current.add(i.id));
@@ -31,16 +40,20 @@ export function useFeed(types: FeedType[], pushVersion: number, ticker: string |
       setExhausted(incoming.length < PAGE);
       setError(undefined);
     } catch (e) {
-      setError((e as Error).message);
+      if (!stale()) setError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (!stale()) setLoading(false);
     }
   }, [query]);
 
   const loadMore = useCallback(async () => {
     const last = items[items.length - 1];
     if (!last) return;
-    const resp = await getJson<FeedItem[]>(`/api/v1/feed?${query}&before=${encodeURIComponent(last.occurredAt)}`);
+    // Keyset cursor: items at exactly last.occurredAt continue after last.id (see FeedController).
+    const resp = await getJson<FeedItem[]>(
+      `/api/v1/feed?${query}&before=${encodeURIComponent(last.occurredAt)}&beforeId=${encodeURIComponent(last.id)}`
+    );
+    if (currentQuery.current !== query) return; // filter changed meanwhile
     resp.data.forEach((i) => known.current.add(i.id));
     setItems((prev) => [...prev, ...resp.data.filter((i) => !prev.some((p) => p.id === i.id))]);
     setExhausted(resp.data.length < PAGE);

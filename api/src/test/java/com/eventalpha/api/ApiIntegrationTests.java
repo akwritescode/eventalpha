@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.jayway.jsonpath.JsonPath;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URI;
@@ -204,6 +205,41 @@ class ApiIntegrationTests {
         }
         mvc.perform(get("/api/v1/feed").header("Origin", "https://evil.example.com"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @Sql(statements = """
+            INSERT INTO articles (id, source, source_id, form_type, url, title, tickers, published_at, content_hash)
+            SELECT 100 + n, 'sec_edgar', 'tie-' || n, '8-K', 'https://example.com/tie/' || n, 'Tie ' || n, '{TIE}',
+                   date_trunc('second', now()) - interval '4 days', 'tie' || n
+            FROM generate_series(1, 3) n;""")  // the ';' stops @Sql splitting the statement on newlines
+    @Sql(statements = "DELETE FROM articles WHERE source_id LIKE 'tie-%'",
+            executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
+    void feedPagesThroughItemsThatShareATimestamp() throws Exception {
+        // Three filings with the same timestamp, one per page: each must appear exactly once.
+        var seen = new ArrayList<String>();
+        String before = null;
+        String beforeId = null;
+        for (int page = 0; page < 4; page++) {
+            var req = get("/api/v1/feed").param("types", "sec").param("ticker", "TIE").param("limit", "1");
+            if (before != null) {
+                req = req.param("before", before).param("beforeId", beforeId);
+            }
+            String body = mvc.perform(req).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            List<String> ids = JsonPath.read(body, "$.data[*].id");
+            if (ids.isEmpty()) {
+                break;
+            }
+            seen.add(ids.getFirst());
+            before = JsonPath.read(body, "$.data[0].occurredAt");
+            beforeId = ids.getFirst();
+        }
+        assertThat(seen).containsExactly("article:103", "article:102", "article:101");
+    }
+
+    @Test
+    void feedRejectsInvalidTickers() throws Exception {
+        mvc.perform(get("/api/v1/feed").param("ticker", "DROP TABLE")).andExpect(status().isBadRequest());
     }
 
     @Test
