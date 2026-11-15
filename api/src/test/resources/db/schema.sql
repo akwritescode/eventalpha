@@ -302,5 +302,11 @@ ALTER TABLE earnings_events ADD COLUMN market_cap FLOAT;
 
 UPDATE alembic_version SET version_num='973a74d4fd9a' WHERE alembic_version.version_num = '41b65a6ba799';
 
+-- Running upgrade 973a74d4fd9a -> c492226ac7ac
+
+ALTER TABLE ticker_universe ADD COLUMN size_rank INTEGER;
+
+UPDATE alembic_version SET version_num='c492226ac7ac' WHERE alembic_version.version_num = '973a74d4fd9a';
+
 COMMIT;
 

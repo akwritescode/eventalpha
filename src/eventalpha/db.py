@@ -57,7 +57,8 @@ def upsert_ticker_universe(engine: Engine, rows: Iterable[dict[str, str]]) -> in
     stmt = insert(ticker_universe).values(rows)
     stmt = stmt.on_conflict_do_update(
         index_elements=["ticker"],
-        set_={"cik": stmt.excluded.cik, "name": stmt.excluded.name, "updated_at": func.now()},
+        set_={"cik": stmt.excluded.cik, "name": stmt.excluded.name, "size_rank": stmt.excluded.size_rank,
+              "updated_at": func.now()},
     )
     with engine.begin() as conn:
         conn.execute(stmt)

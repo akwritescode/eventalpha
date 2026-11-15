@@ -17,7 +17,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from airflow.sdk import dag, get_current_context, task
-from eventalpha_common import ARTICLES, DEFAULT_ARGS, START_DATE, engine, settings
+from eventalpha_common import ARTICLES, DEFAULT_ARGS, START_DATE, company_matcher, engine, settings
 
 
 @dag(
@@ -57,6 +57,12 @@ def rss_news_hourly():
             return {"feed": f.name, "status": 304, "inserted": 0, "updated": 0}
 
         articles = [a for e in result.entries if (a := entry_to_article(f, e))]
+        # Feeds rarely carry the "(NYSE: LLY)" citation in the summary; add companies named in the text.
+        from eventalpha.companies import merge_tickers
+
+        matcher = company_matcher()
+        for a in articles:
+            a.tickers = merge_tickers(a.tickers, matcher.find(f"{a.title}\n{a.summary or ''}"))
         write_jsonl(
             settings().raw_data_dir, f"rss_{f.name}", ctx["logical_date"].date(), ctx["run_id"],
             (a.model_dump(mode="json") for a in articles), bucket=settings().raw_bucket,

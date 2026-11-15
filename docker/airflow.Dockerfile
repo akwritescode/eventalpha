@@ -29,7 +29,8 @@ RUN uv pip install --no-cache --compile-bytecode --python "$(command -v python)"
 # Code is baked in, so production runs exactly what CI tested. Local dev mounts over these paths.
 COPY --chown=airflow:root dags /opt/airflow/dags
 COPY --chown=airflow:root src /opt/airflow/project/src
-COPY --chown=airflow:root config/feeds.yaml /opt/airflow/project/config/feeds.yaml
+# All of config/ (feeds, S&P universe, company aliases): DAGs read these at run time.
+COPY --chown=airflow:root config /opt/airflow/project/config
 COPY --chown=airflow:root migrations /opt/airflow/project/migrations
 COPY --chown=airflow:root alembic.ini /opt/airflow/project/alembic.ini
 ENV PYTHONPATH=/opt/airflow/project/src

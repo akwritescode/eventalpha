@@ -108,7 +108,9 @@ def select_filings(
 def fetch_company_tickers(client: RateLimitedClient) -> list[dict[str, str]]:
     resp = client.get(COMPANY_TICKERS_URL)
     resp.raise_for_status()
+    # SEC lists companies largest first (by market value); keep that order as size_rank.
+    data = resp.json()
     return [
-        {"ticker": r["ticker"].upper(), "cik": str(r["cik_str"]), "name": r["title"]}
-        for r in resp.json().values()
+        {"ticker": r["ticker"].upper(), "cik": str(r["cik_str"]), "name": r["title"], "size_rank": int(k) + 1}
+        for k, r in sorted(data.items(), key=lambda kv: int(kv[0]))
     ]

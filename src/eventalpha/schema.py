@@ -30,6 +30,9 @@ ticker_universe = Table(
     Column("ticker", String(16), primary_key=True),
     Column("cik", String(10), nullable=False, index=True),
     Column("name", Text, nullable=False),
+    # Position in SEC's company_tickers.json, which lists companies largest first (1 = largest).
+    # Lets company-name matching trust short names only for well-known companies.
+    Column("size_rank", Integer),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 

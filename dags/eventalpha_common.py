@@ -100,6 +100,18 @@ def universe():
     return load_universe(Path(os.environ.get("UNIVERSE_CONFIG", "/opt/airflow/project/config/spx_universe.yaml")))
 
 
+@cache
+def company_matcher():
+    """Company names → tickers for news items (SEC ticker list + config/company_aliases.yaml)."""
+    import os
+    from pathlib import Path
+
+    from eventalpha.companies import CompanyMatcher
+
+    config = Path(os.environ.get("UNIVERSE_CONFIG", "/opt/airflow/project/config/spx_universe.yaml")).parent
+    return CompanyMatcher.from_db(engine(), config / "company_aliases.yaml")
+
+
 def scheduled_local_time(context) -> pendulum.DateTime:
     """When this run is "for", in New York time: params.as_of on a manual replay, otherwise the
     time it was scheduled for."""
