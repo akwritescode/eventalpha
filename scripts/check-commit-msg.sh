@@ -7,13 +7,14 @@
 # Header: <type>(<optional scope>)<optional !>: <description>
 #   type        feat fix docs style refactor perf test build ci chore revert
 #   scope       lowercase letters, digits, hyphens: feat(web), fix(alerts)
-#   description starts lowercase, no trailing period, header at most 72 characters
+#   description starts lowercase, no trailing period; header at most 100 characters
+#   (the commitlint default; aim for 72 so it reads well in git log)
 # Body (optional) is separated from the header by one blank line.
 set -eu
 
 TYPES='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
 HEADER_RE="^($TYPES)(\([a-z0-9][a-z0-9-]*\))?!?: [^A-Z ].*[^. ]$"
-MAX=72
+MAX=100
 
 check() {  # $1 = full message, $2 = label for errors
   msg=$(printf '%s\n' "$1" | grep -v '^#' || true)

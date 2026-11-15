@@ -1,0 +1,22 @@
+name: pr-title
+
+# With squash merging, the PR title becomes the commit message on main, so it must be a
+# Conventional Commit too. Same checker as the hooks and the commits job.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PR title is a Conventional Commit
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          printf '%s\n' "$TITLE" > "$RUNNER_TEMP/title"
+          ./scripts/check-commit-msg.sh "$RUNNER_TEMP/title"

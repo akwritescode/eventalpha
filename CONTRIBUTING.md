@@ -41,7 +41,8 @@ Rules the hooks and CI enforce:
 * The scope is optional, lowercase: `feat(web)`, `fix(alerts)`, `docs(readme)`. Common
   scopes: `api`, `web`, `dags`, `signals`, `news`, `sec`, `macro`, `alerts`, `deploy`, `deps`.
 * The description is imperative and starts lowercase ("add", not "Added"/"Add"), with no
-  trailing period. The whole header is at most 72 characters.
+  trailing period. Aim for a header of at most 72 characters; 100 is the hard limit (it
+  leaves room for Dependabot's grouped-update titles).
 * A blank line separates the header from the body.
 * A breaking change adds `!` after the type/scope (`feat(api)!: ...`) and a
   `BREAKING CHANGE:` footer.
