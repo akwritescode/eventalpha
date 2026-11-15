@@ -250,8 +250,9 @@ cd api && ./gradlew test                                        # Java (JDK 25 a
 
 A single AWS Lightsail instance runs the same compose stack with a production layer (Caddy +
 Let's Encrypt on a DuckDNS name, data on an attached disk, backups to a bucket). CI builds
-images on `main`; deploys and rollbacks are one command from a laptop. See
-[docs/DEPLOY.md](docs/DEPLOY.md).
+images on `main`; deploys and rollbacks are one command from a laptop. The web UI is on
+Vercel, deployed from GitHub on every push (preview builds per pull request), and calls the
+API directly. See [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Layout
 

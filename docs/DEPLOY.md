@@ -1,10 +1,12 @@
 # Deploying EventAlpha to AWS Lightsail
 
 One Lightsail instance runs the same compose stack as local development, with a production
-layer on top. Nothing here runs automatically: CI builds images, you deploy from your laptop.
+layer on top: CI builds images, you deploy from your laptop. The web UI is separate: Vercel
+builds and serves `web/` straight from GitHub, and browsers call the API on Lightsail.
 
 ```
-internet :80/:443 ──► Caddy (Let's Encrypt) ──► api:8081           eventalpha.duckdns.org
+browser ──► Vercel (web UI, static) ─ page only                    eventalpha.vercel.app
+browser ──► :443 Caddy (Let's Encrypt) ──► api:8081 (REST + SSE)   eventalpha.duckdns.org
 you ──► ssh -L 8080:localhost:8080 ──► airflow-apiserver:8080      (never public)
 
 /srv/eventalpha (attached disk): warehouse-db, airflow-db, Redis AOF, logs, raw data, Caddy certificates
@@ -18,6 +20,7 @@ Lightsail bucket: raw/ (landing JSONL), warehouse/ (nightly pg_dump, 30-day rete
 | Production compose layer | `docker-compose.prod.yml`, `deploy/Caddyfile` |
 | Images | CI (`.github/workflows/ci.yml`) pushes `ghcr.io/akwritescode/eventalpha-{airflow,api}:<sha>` on main |
 | Deploy / rollback | `deploy/deploy.sh [sha]` |
+| Web UI | Vercel project with root directory `web/` (`web/vercel.json`); deploys on push to main, preview per PR |
 | Backups, cleanup, disk alerts | `dags/maintenance.py` |
 
 ## One-time setup
@@ -52,6 +55,23 @@ Lightsail bucket: raw/ (landing JSONL), warehouse/ (nightly pg_dump, 30-day rete
    (GitHub → Packages → Package settings), or `docker login ghcr.io` on the server once with a
    read-only token.
 
+9. **Web UI on Vercel:**
+   1. vercel.com → Add New → Project → import the GitHub repo; **Root Directory** `web`
+      (framework, build and output come from `web/vercel.json`).
+   2. Environment variables (Production and Preview):
+      `REACT_APP_API_URL=https://eventalpha.duckdns.org` and
+      `REACT_APP_TELEGRAM_URL=<channel invite link>`. They're baked in at build time, so
+      redeploy after changing them.
+   3. In `.env.production`, allow the site to call the API, then `deploy/deploy.sh`:
+      `EVENTALPHA_CORS_ALLOWED_ORIGINS=https://eventalpha.vercel.app,https://eventalpha-*.vercel.app`
+      (use the project's real domain; the wildcard covers preview builds; add a custom
+      domain here too if you attach one).
+   4. Check: open the Vercel URL; the stream loads and shows LIVE. A CORS error in the
+      browser console means the origin isn't in that list.
+
+   The browser talks to the API directly, not through a Vercel rewrite: Vercel's proxy isn't
+   meant for long-lived Server-Sent Events, and the live stream would keep reconnecting.
+
 ## Deploy, roll back, operate
 
 ```bash
@@ -75,6 +95,7 @@ docker compose ... exec -T warehouse-db pg_restore -U eventalpha -d eventalpha -
 ## Later
 
 * Real domain: set `API_DOMAIN`, add an A record, redeploy. Caddy issues the certificate itself.
-* Deploy from CI: needs SSH reachable from GitHub runners (e.g. the Tailscale GitHub Action)
+* Deploy the backend from CI: needs SSH reachable from GitHub runners (e.g. the Tailscale
+  GitHub Action). The web UI already deploys from GitHub through Vercel.
   instead of opening port 22 to the world.
 * Remote Terraform state (S3 backend) once more than one machine runs `terraform apply`.

@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,6 +18,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +37,8 @@ import org.springframework.test.web.servlet.MockMvc;
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, // real server for the SSE test
-        properties = "spring.datasource.hikari.read-only=false") // tests must load fixtures
+        properties = {"spring.datasource.hikari.read-only=false", // tests must load fixtures
+                "eventalpha.cors.allowed-origins=http://localhost:3000, https://eventalpha-*.vercel.app"})
 @AutoConfigureMockMvc
 @Sql(scripts = {"/db/schema.sql", "/db/seed.sql"}, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
 class ApiIntegrationTests {
@@ -190,6 +193,17 @@ class ApiIntegrationTests {
         mvc.perform(get("/api/v1/feed").param("ticker", "ZZZZ"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.type != 'signal')]", hasSize(0)));
+    }
+
+    @Test
+    void browsersOnTheWebOriginsMayReadTheApi() throws Exception {
+        for (String origin : List.of("http://localhost:3000", "https://eventalpha-git-feature-x.vercel.app")) {
+            mvc.perform(get("/api/v1/feed").header("Origin", origin))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Access-Control-Allow-Origin", origin));
+        }
+        mvc.perform(get("/api/v1/feed").header("Origin", "https://evil.example.com"))
+                .andExpect(status().isForbidden());
     }
 
     @Test

@@ -1,7 +1,10 @@
 # HTTPS for the public API. Caddy obtains and renews the Let's Encrypt certificate for
 # API_DOMAIN on its own (HTTP-01 challenge on port 80, then redirects 80 -> 443).
+# The web UI is on Vercel and calls this API from the browser (CORS is handled by the API).
 {$API_DOMAIN} {
-	encode zstd gzip
+	# Compress everything except the Server-Sent Events stream, which must flush each event.
+	@compressible not path /api/v1/stream/*
+	encode @compressible zstd gzip
 
 	# Only the API, its docs and the liveness probe are public; other actuator endpoints are not.
 	@public path / /api/* /docs /docs/* /swagger-ui/* /openapi /openapi/* /actuator/health

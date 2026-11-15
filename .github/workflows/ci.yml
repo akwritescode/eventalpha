@@ -45,6 +45,22 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew test --console=plain  # Testcontainers uses the runner's Docker
 
+  web:
+    # Vercel deploys web/ on every push; this fails the PR first if the UI doesn't build.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build  # CI=true on GitHub runners: lint warnings fail the build
+
   airflow-dags:
     runs-on: ubuntu-latest
     steps:

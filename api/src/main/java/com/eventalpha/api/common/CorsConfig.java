@@ -6,8 +6,10 @@ import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Browser access from the web UI. In production the UI and API share one origin behind Caddy,
- * so this only matters locally (React dev server on :3000 calling the API on :8081).
+ * Browser access from the web UI, which is served from another origin: Vercel in production
+ * (the browser calls this API directly, including the SSE stream), the React dev server locally.
+ * Entries are origin patterns, so `https://eventalpha-*.vercel.app` admits Vercel preview builds.
+ * Read-only API, no cookies: GET only, no credentials.
  */
 @Configuration
 class CorsConfig implements WebMvcConfigurer {
@@ -20,6 +22,6 @@ class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**").allowedOrigins(origins).allowedMethods("GET").maxAge(3600);
+        registry.addMapping("/api/**").allowedOriginPatterns(origins).allowedMethods("GET").maxAge(3600);
     }
 }
