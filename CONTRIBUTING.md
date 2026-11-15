@@ -3,10 +3,13 @@
 ## Setup
 
 ```bash
-git config core.hooksPath .githooks   # once per clone: enables the shared Git hooks
-uv sync                               # Python (pipeline, DAGs)
-cd web && npm ci                      # web UI
+make setup     # git hooks (core.hooksPath .githooks), uv sync, npm ci, .env from .env.example
+make help      # every task: up, down, lint, test, check, ...
 ```
+
+The pre-commit hook runs `.pre-commit-config.yaml` on staged files: ruff (lint and format),
+gitleaks (secrets), whitespace and YAML/JSON checks. `uv run pre-commit run --all-files`
+runs it on everything. Editor settings are in `.editorconfig`.
 
 Running the stack locally is covered in the [README](README.md#running-locally).
 
@@ -68,7 +71,10 @@ All three run `scripts/check-commit-msg.sh`. To fix a message that's already com
 ## Before you push
 
 ```bash
-uv run ruff check . && uv run pytest -q          # Python
-(cd api && ./gradlew test)                        # API (needs Docker for Testcontainers)
-(cd web && CI=true npm run build)                 # web UI: lint warnings fail the build
+make check     # ruff, ruff format, mypy, Python tests with coverage, API tests, web tests and build
 ```
+
+CI runs the same, plus gitleaks over the pushed commits and a check that
+`docker/requirements-airflow.txt` matches `pyproject.toml`. Python coverage must stay at or
+above the floor in `pyproject.toml`; Postgres-backed tests (`tests/test_db.py`) and the API
+tests use Testcontainers, so Docker must be running.

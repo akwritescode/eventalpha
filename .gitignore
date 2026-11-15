@@ -16,3 +16,9 @@ infra/terraform/.terraform/
 infra/terraform/*.tfstate*
 infra/terraform/terraform.tfvars
 infra/terraform/.terraform.lock.hcl.bak
+
+# Test coverage data
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml

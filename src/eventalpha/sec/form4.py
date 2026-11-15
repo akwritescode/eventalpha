@@ -75,7 +75,7 @@ def parse_form4(entry: IndexEntry, sub: Submission) -> list[dict[str, Any]]:
         "officer_title": _val(rel, "officerTitle") if rel is not None else None,
         "filed_at": sub.accepted_at,
     }
-    rows = []
+    rows: list[dict[str, Any]] = []
     for table, is_derivative in (("nonDerivativeTable", False), ("derivativeTable", True)):
         tag = "derivativeTransaction" if is_derivative else "nonDerivativeTransaction"
         for tx in root.findall(f"{table}/{tag}"):

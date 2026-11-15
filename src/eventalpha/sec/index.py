@@ -6,6 +6,7 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Any
 
 from eventalpha.sec.client import RateLimitedClient
 
@@ -47,7 +48,13 @@ class IndexEntry:
 
     @classmethod
     def from_dict(cls, d: dict[str, str]) -> IndexEntry:
-        return cls(**d | {"date_filed": date.fromisoformat(d["date_filed"])})  # type: ignore[arg-type]
+        return cls(
+            form_type=d["form_type"],
+            company=d["company"],
+            cik=d["cik"],
+            date_filed=date.fromisoformat(d["date_filed"]),
+            path=d["path"],
+        )
 
 
 def daily_index_url(d: date) -> str:
@@ -113,7 +120,7 @@ def select_filings(
     return list(chosen.values())
 
 
-def fetch_company_tickers(client: RateLimitedClient) -> list[dict[str, str]]:
+def fetch_company_tickers(client: RateLimitedClient) -> list[dict[str, Any]]:
     resp = client.get(COMPANY_TICKERS_URL)
     resp.raise_for_status()
     # SEC lists companies largest first (by market value); keep that order as size_rank.

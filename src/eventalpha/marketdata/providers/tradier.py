@@ -114,7 +114,7 @@ class TradierMarketData:
         bars = []
         for d in days:
             o, h, lo, c = (_dec(d.get(k)) for k in ("open", "high", "low", "close"))
-            if None in (o, h, lo, c):
+            if o is None or h is None or lo is None or c is None:  # incomplete bar
                 continue
             vol = d.get("volume")
             bars.append(DailyBar(symbol, date.fromisoformat(d["date"]), o, h, lo, c, int(vol) if vol else None))

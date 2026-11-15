@@ -72,7 +72,8 @@ def freshness(engine: Engine) -> dict[str, str | None]:
     with engine.connect() as conn:
         for k, q in queries.items():
             v = conn.execute(text(q)).scalar()
-            out[k] = v.isoformat() if hasattr(v, "isoformat") else v
+            isoformat = getattr(v, "isoformat", None)  # dates and timestamps → ISO strings
+            out[k] = isoformat() if callable(isoformat) else v
     return out
 
 

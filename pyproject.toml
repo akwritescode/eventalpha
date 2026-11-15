@@ -28,9 +28,14 @@ build-backend = "uv_build"
 dev = [
     "alembic>=1.20.1",
     "fakeredis[lua]>=2.26",
+    "mypy>=2.4.1",
+    "pre-commit>=4.7.0",
     "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
     "respx>=0.23.1",
     "ruff>=0.17.5",
+    "testcontainers[postgres]>=4.15.0",
+    "types-pyyaml>=6.0.12.20261113",
 ]
 
 [tool.ruff]
@@ -46,3 +51,21 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+files = ["src/eventalpha"]
+python_version = "3.12"
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Third-party packages without type information (feedparser, typesafe-sdk, ...).
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["eventalpha"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 70  # CI fails below this; raise it as coverage grows
+skip_empty = true
+show_missing = false

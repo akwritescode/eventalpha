@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 
 import httpx
 
@@ -56,7 +56,7 @@ class RateLimitedClient:
             self._backoff(resp.status_code, url, attempt)
         raise AssertionError("unreachable")
 
-    def stream_lines(self, url: str, max_attempts: int = 4) -> Iterator[str]:
+    def stream_lines(self, url: str, max_attempts: int = 4) -> Generator[str, None, None]:
         # Retry only before the first line is yielded; a failure mid-body propagates.
         for attempt in range(1, max_attempts + 1):
             self._wait()

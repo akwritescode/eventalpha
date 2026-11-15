@@ -1,6 +1,12 @@
 #!/bin/sh
 # Shared hook (enable once per clone: git config core.hooksPath .githooks).
-# Runs any machine-local pre-commit hook in .git/hooks.
+# Runs the checks in .pre-commit-config.yaml on the staged files (ruff, formatting, gitleaks,
+# whitespace), then any machine-local pre-commit hook in .git/hooks.
+if command -v uv >/dev/null 2>&1; then
+  uv run --quiet pre-commit run --hook-stage pre-commit || exit 1
+else
+  echo "pre-commit checks skipped: install uv (https://docs.astral.sh/uv/) to run them" >&2
+fi
 local_hook="$(git rev-parse --git-dir)/hooks/pre-commit"
 [ -x "$local_hook" ] && exec "$local_hook" "$@"
 exit 0

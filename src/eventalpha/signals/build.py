@@ -142,7 +142,8 @@ def build_spx_overnight(
     breadth_score = _weighted([(a.sentiment_score, a.materiality / 3) for a in company_news])
     parts = [(mega_score, MEGACAP_WEIGHT), (breadth_score, 1 - MEGACAP_WEIGHT)]
     present = [(v, w) for v, w in parts if v is not None]
-    score = _clip(_weighted(present)) if present else None
+    combined = _weighted(present) if present else None
+    score = _clip(combined) if combined is not None else None
 
     unscored = inputs.unscored_count(engine, window_start, now)
     coverage = len(articles) / (len(articles) + unscored) if (articles or unscored) else 0.0

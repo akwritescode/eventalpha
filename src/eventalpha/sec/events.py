@@ -89,10 +89,9 @@ def to_article(entry: IndexEntry, sub: Submission, cik_map: dict[str, tuple[str,
         headline = "; ".join(items) or "Current report"
     elif form == "6-K":
         labels = (d.description for d in exhibits if d.description and not _generic(d.description, d.type))
-        headline = next(labels, None)
         # A generic exhibit label ("EXHIBIT 99.1") says nothing; the press release's first line does.
-        headline = headline or next((_first_line(d.text) for d in exhibits if _first_line(d.text)), None)
-        headline = headline or "Report of foreign private issuer"
+        label = next(labels, None) or next((_first_line(d.text) for d in exhibits if _first_line(d.text)), None)
+        headline = label or "Report of foreign private issuer"
     else:  # S-1, 424B4, 424B5: the prospectus cover and summary say what is being sold
         # .get: amended forms (S-1/A) and any form added to the family later still get a headline.
         headline = {

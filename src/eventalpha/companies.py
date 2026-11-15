@@ -183,8 +183,8 @@ class _Pattern:
 
 def normalize_name(name: str) -> str:
     """SEC company name → the name people write: 'ELI LILLY & Co' → 'Eli Lilly'."""
-    words = re.sub(r"/[A-Z]{2}/?", " ", name)  # state tags like /DE/
-    words = re.sub(r"[^\w&'\-. ]", " ", words).replace(".", " ").split()
+    cleaned = re.sub(r"/[A-Z]{2}/?", " ", name)  # state tags like /DE/
+    words = re.sub(r"[^\w&'\-. ]", " ", cleaned).replace(".", " ").split()
     while words and words[-1].lower().strip("&") in _SUFFIXES | {""}:
         words.pop()
     while words and words[0].lower() == "the":

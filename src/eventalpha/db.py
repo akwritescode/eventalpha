@@ -32,9 +32,9 @@ def upsert_articles(engine: Engine, items: Sequence[Article]) -> dict[str, int]:
     rows = [a.model_dump() for a in items]
     # Duplicates inside one batch would make ON CONFLICT fail ("cannot affect row a second time").
     rows = list({(r["source"], r["source_id"]): r for r in rows}.values())
-    stmt = insert(articles).values(rows)
-    excluded = stmt.excluded
-    stmt = stmt.on_conflict_do_update(
+    insert_stmt = insert(articles).values(rows)
+    excluded = insert_stmt.excluded
+    stmt = insert_stmt.on_conflict_do_update(
         constraint="uq_articles_source_source_id",
         set_={
             c: excluded[c]
@@ -61,7 +61,7 @@ def upsert_articles(engine: Engine, items: Sequence[Article]) -> dict[str, int]:
     return {"inserted": inserted, "updated": len(result) - inserted}
 
 
-def upsert_ticker_universe(engine: Engine, rows: Iterable[dict[str, str]]) -> int:
+def upsert_ticker_universe(engine: Engine, rows: Iterable[Mapping[str, Any]]) -> int:
     rows = list({r["ticker"]: r for r in rows}.values())
     if not rows:
         return 0
