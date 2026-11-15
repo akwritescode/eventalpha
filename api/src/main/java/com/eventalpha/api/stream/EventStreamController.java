@@ -68,6 +68,9 @@ class EventStreamController {
         String last = start;
         long lastSentAt = System.nanoTime();
         try {
+            // Commit the response right away so clients and proxies see the stream open,
+            // instead of waiting for the first event or keepalive.
+            emitter.send(SseEmitter.event().comment("connected"));
             while (!closed.get()) {
                 var events = reader.readAfter(last, 100);
                 for (var e : events) {

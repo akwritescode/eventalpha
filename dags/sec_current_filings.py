@@ -21,7 +21,8 @@ LOOKBACK = timedelta(hours=3)  # overlap covers missed runs; the ledger makes re
 @dag(schedule="*/15 6-20 * * 1-5", start_date=START_DATE, catchup=False, max_active_runs=1,
      default_args=DEFAULT_ARGS | {"retries": 1}, tags=["ingest", "sec", "intraday"], doc_md=__doc__)
 def sec_current_filings():
-    @task(pool="sec_edgar", outlets=[ARTICLES])
+    # Highest priority in the shared SEC pool: these feed the 16:45 and 09:15 alerts.
+    @task(pool="sec_edgar", outlets=[ARTICLES], priority_weight=100, weight_rule="absolute")
     def fetch_and_load() -> dict:
         import pendulum
         from sqlalchemy import select

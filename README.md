@@ -93,7 +93,7 @@ calendar, the Cleveland Fed's inflation nowcasts, and the Tradier brokerage API.
 | Time semantics | SEC DAGs use `CronDataIntervalTimetable`: the data interval *is* the filing date, so `airflow backfill create` rebuilds any range. |
 | One file, four DAGs | `dags/sec_edgar_daily.py` generates a DAG per filing family, so 13F history can be backfilled without re-fetching every 8-K. |
 | Waiting for upstream | A `reschedule`-mode sensor waits for SEC's evening index without holding a worker; `soft_fail` turns holidays into skips. |
-| External rate limits | The `sec_edgar` pool is shared by all SEC DAGs, which keeps their combined rate under 10 req/s. `classifier_api` bounds classification. Each client also throttles itself. |
+| External rate limits | The `sec_edgar` pool is shared by all SEC DAGs, which keeps their combined rate under 10 req/s. Priority weights decide who gets a free slot first: intraday filings 100, ticker refresh 50, events 40, Form 4 30, 10-K/Q 20, 13F 10. `classifier_api` bounds classification. Each client also throttles itself. |
 | Bandwidth | EDGAR submissions are streamed and cut off before XBRL, images and archives. RSS uses conditional GET. |
 | Partial failure | A bad filing is logged in the ledger and skipped; a batch fails (and retries) only if most of it fails. |
 | Model changes | Scores are keyed on `<provider>:<model>` and `QUESTIONS_VERSION`; switching provider or model, or changing the questions, re-classifies history into new rows. |
@@ -116,17 +116,55 @@ OpenAPI UI at http://localhost:8081/docs, health at `/actuator/health`.
 ## Running locally
 
 ```bash
-cp .env.example .env          # set SEC_USER_AGENT (real contact email) and TYPESAFE_API_KEY
-docker compose up -d          # Airflow http://localhost:8080 (local-only, no login), API :8081
+cp .env.example .env          # fill in SEC_USER_AGENT (real contact email) and the API keys
+docker compose up -d          # everything below; first start builds the images (a few minutes)
 ```
 
-Schedules are in New York time (the SEC DAGs run at 01:00 ET for the previous filing date).
-DAGs start paused. Run `sec_ticker_universe` first, then unpause the others or backfill:
+After editing `.env`, recreate the containers so they see the new values (Docker reads
+`env_file` only when it creates a container):
 
 ```bash
-docker compose exec airflow-scheduler airflow dags trigger sec_ticker_universe
-docker compose exec airflow-scheduler airflow backfill create --dag-id sec_insider_daily \
+docker compose up -d --force-recreate
+```
+
+### What's where locally
+
+Everything listens on `127.0.0.1` only.
+
+| What | Where | Notes |
+|---|---|---|
+| **Airflow UI** | http://localhost:8080 | No login locally. Dags, runs, task logs, **Assets**, **Admin → Pools / Connections**. Set the UI timezone to New York (user menu, bottom left) so schedules and run times read the same |
+| **API docs (Swagger UI)** | http://localhost:8081/docs | Try every endpoint in the browser; `http://localhost:8081/` redirects here |
+| OpenAPI spec | http://localhost:8081/openapi | JSON, for client generators |
+| API health | http://localhost:8081/actuator/health | `UP` when Postgres and Redis are reachable |
+| Live event stream | `curl -N http://localhost:8081/api/v1/stream/events` | Server-Sent Events: prints `:connected`, then each high-impact event as it's published |
+| **Warehouse (Postgres 18)** | `localhost:5433`, db / user / password `eventalpha` | Postico, DBeaver, `psql -h localhost -p 5433 -U eventalpha` |
+| **Redis Insight** | http://localhost:5540 | Optional, see below |
+| Task logs (files) | `./logs/dag_id=…/run_id=…/task_id=…/attempt=N.log` | Same logs as the Airflow UI |
+| Raw landing zone | `./data/raw/<source>/dt=YYYY-MM-DD/*.jsonl` | What each run fetched, before any database write |
+| Alerts | Your Telegram channel | Signals and task failures, once `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` are set |
+
+Airflow's own metadata database (`airflow-db`) isn't exposed; use the Airflow UI or
+`docker compose exec airflow-db psql -U airflow`.
+
+### Common commands
+
+Schedules are in New York time (the SEC DAGs run at 01:00 ET for the previous filing date).
+DAGs start paused: unpause them in the Airflow UI, or from the command line.
+
+```bash
+alias af='docker compose exec airflow-scheduler airflow'
+
+af dags list-import-errors                      # should print "No data found"
+af dags trigger sec_ticker_universe             # run once now
+af dags unpause signal_premarket                # start a DAG's schedule
+af backfill create --dag-id sec_insider_daily \
   --from-date 2026-11-02T01:00:00-05:00 --to-date 2026-11-13T01:00:00-05:00   # filing dates, 01:00 ET
+af dags trigger signal_spx_overnight \
+  --conf '{"as_of": "2026-11-13T16:45:00-05:00"}' # replay a signal as of a past trading-day moment
+
+docker compose ps                                # container health
+docker compose logs -f --tail 100 api            # follow a service's logs
 ```
 
 ### Looking at Redis (the live event stream)

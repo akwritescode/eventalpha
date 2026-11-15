@@ -21,14 +21,17 @@ class Family:
     universe_only: bool  # keep only filings whose CIK is a listed company
     batch_size: int
     description: str
+    # Airflow priority_weight inside the shared `sec_edgar` pool: when slots are scarce (a 13F
+    # deadline day in earnings season), higher-priority families' batches start first.
+    priority: int
 
 
 FAMILIES: dict[str, Family] = {
     f.name: f
     for f in (
-        Family("events", EVENT_FORMS, True, 25, "8-K, 6-K, Schedule 13D, S-1, 424B4/5 → articles (classified)"),
-        Family("insider", INSIDER_FORMS, True, 100, "Form 4 insider transactions"),
-        Family("holdings", HOLDINGS_FORMS, False, 40, "13F-HR institutional holdings"),
-        Family("periodic", PERIODIC_FORMS, True, 10, "10-K / 10-Q sections and XBRL facts"),
+        Family("events", EVENT_FORMS, True, 25, "8-K, 6-K, Schedule 13D, S-1, 424B4/5 → articles (classified)", 40),
+        Family("insider", INSIDER_FORMS, True, 100, "Form 4 insider transactions", 30),
+        Family("holdings", HOLDINGS_FORMS, False, 40, "13F-HR institutional holdings", 10),
+        Family("periodic", PERIODIC_FORMS, True, 10, "10-K / 10-Q sections and XBRL facts", 20),
     )
 }

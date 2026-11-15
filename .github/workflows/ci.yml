@@ -52,10 +52,12 @@ jobs:
       - name: Build the Airflow image and check every DAG imports
         run: |
           docker build -f docker/airflow.Dockerfile -t eventalpha-airflow:ci .
+          # PYTHONPATH: Airflow's DAG processor puts the dags folder on sys.path; a bare DagBag doesn't.
           docker run --rm -e SEC_USER_AGENT=ci -e AIRFLOW__CORE__LOAD_EXAMPLES=false \
+            -e PYTHONPATH=/opt/airflow/dags:/opt/airflow/project/src \
             eventalpha-airflow:ci python -c "
           from airflow.models.dagbag import DagBag
-          bag = DagBag('/opt/airflow/dags', include_examples=False)
+          bag = DagBag('/opt/airflow/dags')  # examples are off via AIRFLOW__CORE__LOAD_EXAMPLES
           assert not bag.import_errors, bag.import_errors
           print(sorted(bag.dag_ids))"
 

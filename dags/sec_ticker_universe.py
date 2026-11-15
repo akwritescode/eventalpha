@@ -23,7 +23,7 @@ from eventalpha_common import DEFAULT_ARGS, START_DATE, TICKER_UNIVERSE, engine,
     doc_md=__doc__,
 )
 def sec_ticker_universe():
-    @task(pool="sec_edgar", outlets=[TICKER_UNIVERSE])
+    @task(pool="sec_edgar", outlets=[TICKER_UNIVERSE], priority_weight=50, weight_rule="absolute")
     def refresh() -> int:
         from eventalpha.db import upsert_ticker_universe
         from eventalpha.sec.client import RateLimitedClient

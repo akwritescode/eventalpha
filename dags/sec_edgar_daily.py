@@ -17,6 +17,8 @@
 * **Sensor in reschedule mode** waits for SEC's evening index without holding a worker slot;
   `soft_fail` turns holidays (no index, ever) into skips.
 * **Pool `sec_edgar`** is shared by all four DAGs, so together they stay under SEC's 10 req/s.
+  Each family has a `priority_weight` (events 40 > insider 30 > periodic 20 > holdings 10), so
+  on heavy days trading-relevant batches take free slots before 13F holdings.
 * Every filing gets a `sec_filings` ledger row: loaded / skipped / failed, with the reason.
 """
 
@@ -69,7 +71,8 @@ def build(family: Family):
             with _client() as client:
                 return PokeReturnValue(is_done=fetch_daily_index(client, date.fromisoformat(d)) is not None)
 
-        @task(pool="sec_edgar")
+        # weight_rule="absolute": the priority is the family's own, not summed over downstream tasks.
+        @task(pool="sec_edgar", priority_weight=family.priority, weight_rule="absolute")
         def list_filings(d: str) -> list[list[dict]]:
             from eventalpha.db import load_cik_map
             from eventalpha.landing import write_jsonl
@@ -88,7 +91,8 @@ def build(family: Family):
             print(f"{len(entries)} filings on {d}; {len(filings)} in family {family.name}")
             return chunk(records, family.batch_size)
 
-        @task(pool="sec_edgar", max_active_tis_per_dagrun=2, execution_timeout=timedelta(minutes=45))
+        @task(pool="sec_edgar", max_active_tis_per_dagrun=2, execution_timeout=timedelta(minutes=45),
+              priority_weight=family.priority, weight_rule="absolute")
         def fetch(batch: list[dict]) -> dict:
             from eventalpha.db import load_cik_map
             from eventalpha.sec.families import process_batch

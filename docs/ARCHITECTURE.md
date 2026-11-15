@@ -163,7 +163,7 @@ payload and the timestamp of every input, so it can be replayed and evaluated.
 | Time semantics | SEC DAGs use `CronDataIntervalTimetable("0 1 * * *", timezone=America/New_York)`: the data interval is the filing date (Eastern), so `airflow backfill create` rebuilds any range. All schedules are New York time, so they stay put across daylight saving; storage and run IDs stay UTC. |
 | One DAG per family | Generated from one file, so each family is scheduled, paused and backfilled on its own (two years of 13F without re-fetching every 8-K). |
 | Waiting on SEC | Sensor in `reschedule` mode (no worker held while waiting); `soft_fail` turns holidays into skips. |
-| Rate limits | Airflow pools bound the total concurrency (`sec_edgar` shared by all SEC DAGs, under SEC's 10 req/s; `classifier_api` for classification); each client also throttles itself. |
+| Rate limits | Airflow pools bound the total concurrency (`sec_edgar` shared by all SEC DAGs, under SEC's 10 req/s, with `priority_weight` per family so intraday filings and 8-Ks run before 13F holdings; `classifier_api` for classification); each client also throttles itself. |
 | Bandwidth | EDGAR submissions are streamed and cut off before XBRL, images and archives. RSS uses conditional GET. |
 | Partial failure | A bad filing is recorded in the ledger and skipped; a batch fails (and retries) only when most of it fails. One dead feed doesn't block the others (`all_done`). |
 | Data-aware scheduling | Classification is triggered by the `articles` asset, not a clock. Assets are name-only (`eventalpha.<table>`): a URI would make Airflow load every installed provider's URI handlers at parse time. |
