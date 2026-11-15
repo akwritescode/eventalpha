@@ -16,6 +16,15 @@ ENV_FILE=.env.production
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 
 [ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE (copy .env.example and fill in production values)"; exit 1; }
+# Same list as x-required-secrets in docker-compose.prod.yml; checked here so a missing value
+# stops the deploy before anything is copied to the server.
+missing=""
+for var in WAREHOUSE_DB_PASSWORD AIRFLOW_DB_PASSWORD AIRFLOW_JWT_SECRET AIRFLOW_ADMIN_PASSWORD FERNET_KEY \
+           API_DOMAIN DUCKDNS_TOKEN SEC_USER_AGENT EVENTALPHA_CORS_ALLOWED_ORIGINS; do
+  grep -Eq "^${var}=.+" "$ENV_FILE" || missing="$missing $var"
+done
+grep -Eq '^AIRFLOW_JWT_SECRET=change-me-local-only$' "$ENV_FILE" && missing="$missing AIRFLOW_JWT_SECRET(placeholder)"
+[ -z "$missing" ] || { echo "set these in $ENV_FILE first:$missing"; exit 1; }
 for image in eventalpha-airflow eventalpha-api; do
   docker manifest inspect "$REGISTRY/$image:$TAG" >/dev/null 2>&1 \
     || { echo "image $REGISTRY/$image:$TAG not found; has CI built this commit?"; exit 1; }

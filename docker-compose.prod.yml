@@ -7,6 +7,18 @@
 # * Only Caddy (80/443) is reachable from outside. The Airflow UI binds to the server's
 #   loopback; reach it with:  ssh -L 8080:localhost:8080 eventalpha
 
+# Fail fast: the base file has local-development defaults for these (eventalpha / airflow /
+# change-me-local-only). Interpolating them here with :? makes `docker compose` refuse to run
+# in production until each one is set in .env, instead of silently using a local default.
+x-required-secrets:
+  warehouse-db-password: ${WAREHOUSE_DB_PASSWORD:?set WAREHOUSE_DB_PASSWORD in .env.production}
+  airflow-db-password: ${AIRFLOW_DB_PASSWORD:?set AIRFLOW_DB_PASSWORD in .env.production}
+  airflow-jwt-secret: ${AIRFLOW_JWT_SECRET:?set AIRFLOW_JWT_SECRET in .env.production}
+  airflow-admin-password: ${AIRFLOW_ADMIN_PASSWORD:?set AIRFLOW_ADMIN_PASSWORD in .env.production}
+  fernet-key: ${FERNET_KEY:?set FERNET_KEY in .env.production}
+  api-domain: ${API_DOMAIN:?set API_DOMAIN in .env.production}
+  duckdns-token: ${DUCKDNS_TOKEN:?set DUCKDNS_TOKEN in .env.production}
+
 x-logging: &logging
   logging:
     driver: json-file

@@ -6,8 +6,11 @@ import { ChannelPreview as Preview, TELEGRAM_URL, getJson } from '../api';
 import { etDate, etTime } from '../format';
 import { T } from '../theme';
 
+const escapeAttr = (v: string) =>
+  v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 /** Telegram-style HTML (b, i, a, code) from our own messages → safe markup. Anything else becomes text. */
-function sanitize(html: string): string {
+export function sanitize(html: string): string {
   const doc = new DOMParser().parseFromString(`<div>${html.replace(/\n/g, '<br>')}</div>`, 'text/html');
   const allowed = new Set(['B', 'STRONG', 'I', 'EM', 'A', 'CODE', 'BR']);
   const walk = (node: Node): string =>
@@ -23,7 +26,9 @@ function sanitize(html: string): string {
         if (el.tagName === 'BR') return '<br>';
         if (el.tagName === 'A') {
           const href = el.getAttribute('href') ?? '';
-          return /^https?:\/\//.test(href) ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${walk(el)}</a>` : walk(el);
+          // getAttribute() returns the decoded value: re-escape it, or a quote in the URL
+          // would end the attribute and let the rest of the URL inject markup.
+          return /^https?:\/\//.test(href) ? `<a href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${walk(el)}</a>` : walk(el);
         }
         const tag = el.tagName.toLowerCase();
         return `<${tag}>${walk(el)}</${tag}>`;
