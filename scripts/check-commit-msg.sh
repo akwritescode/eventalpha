@@ -18,7 +18,8 @@ MAX=100
 
 check() {  # $1 = full message, $2 = label for errors
   msg=$(printf '%s\n' "$1" | grep -v '^#' || true)
-  header=$(printf '%s\n' "$msg" | sed -n 1p)
+  # Trim surrounding whitespace: GitHub UI edits and Dependabot titles can carry a trailing space.
+  header=$(printf '%s\n' "$msg" | sed -n '1{s/^[[:space:]]*//;s/[[:space:]]*$//;p;}')
   case "$header" in Merge\ *) return 0 ;; esac  # merge commits made by git or GitHub
   err=""
   printf '%s' "$header" | grep -Eq "$HEADER_RE" || err="header must be '<type>(<scope>): <description>' with type one of ${TYPES}, description starting lowercase and not ending with a period"
