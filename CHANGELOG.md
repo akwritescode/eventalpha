@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/akwritescode/eventalpha/compare/v0.1.0...v0.1.1) (2026-11-16)
+
+
+### Bug fixes
+
+* **deploy:** make the first-boot script run on Lightsail and give deploy its directory ([392c852](https://github.com/akwritescode/eventalpha/commit/392c852acd0c1b7b9a0ca03d49e5cff91ca3811a))
+
 ## 0.1.0 (2026-11-15)
 
 
