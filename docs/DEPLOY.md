@@ -48,7 +48,7 @@ Lightsail bucket: raw/ (landing JSONL), warehouse/ (nightly pg_dump, 30-day rete
    ```
 7. **Production env:** `cp .env.example .env.production` and fill in every production value.
    Generate passwords with `openssl rand -base64 24` and a Fernet key with
-   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+   `python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` (the format `Fernet.generate_key()` produces, no extra package needed).
    Set `RAW_BUCKET` and `BACKUP_BUCKET` to the bucket name, and `AWS_ACCESS_KEY_ID` /
    `AWS_SECRET_ACCESS_KEY` to the bucket key.
 8. **GHCR visibility:** after the first CI run on main, make both packages public

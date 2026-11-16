@@ -29,7 +29,7 @@ if ! id deploy >/dev/null 2>&1; then
   install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
   install -m 600 -o deploy -g deploy /home/ubuntu/.ssh/authorized_keys /home/deploy/.ssh/authorized_keys
 fi
-install -d -o deploy -g deploy /opt/eventalpha/deploy
+install -d -o deploy -g deploy /opt/eventalpha /opt/eventalpha/deploy  # deploy.sh copies files into both
 
 # --- swap: headroom for memory spikes (pg_dump, big 13F days) instead of the OOM killer
 if [ ! -f /swapfile ]; then
