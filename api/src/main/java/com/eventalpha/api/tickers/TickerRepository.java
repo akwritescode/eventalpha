@@ -17,6 +17,19 @@ class TickerRepository {
         this.jdbc = jdbc;
     }
 
+    record TickerMatch(String ticker, String name, Instant updatedAt) {}
+
+    List<TickerMatch> search(String query) {
+        return jdbc.sql("""
+                SELECT ticker, name, updated_at
+                FROM ticker_universe
+                WHERE starts_with(ticker, :query) OR strpos(upper(name), :query) > 0
+                ORDER BY (ticker = :query) DESC, starts_with(ticker, :query) DESC, size_rank, ticker
+                LIMIT 10
+                """).param("query", query).query((rs, row) -> new TickerMatch(
+                rs.getString("ticker"), rs.getString("name"), Sql.instant(rs, "updated_at"))).list();
+    }
+
     record SentimentDay(
             LocalDate day,
             int articles,

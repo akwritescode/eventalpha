@@ -38,6 +38,7 @@ Documentation:
 * [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md): requirements, scale estimates, data model,
   failure modes, scaling path
 * [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): components, tables, repo layout, design decisions
+* [docs/INTRADAY_DATA_DESIGN.md](docs/INTRADAY_DATA_DESIGN.md) covers minute-candle collection, move windows, partitions and verified S3 retention
 * [docs/DEPLOY.md](docs/DEPLOY.md): production on Lightsail
 
 ## What it collects
@@ -54,6 +55,7 @@ Documentation:
 | `sec_current_filings` | EDGAR "latest filings" feed, every 15 min 06:00-20:00 ET | `articles` (same keys as the nightly run) |
 | `market_calendar` | Exchange sessions incl. holidays and 13:00 early closes (Tradier) | `market_sessions` |
 | `market_snapshot_premarket` / `_close` | Quotes at 09:10 and at close + 35 min; daily bars (Tradier) | `market_snapshots`, `price_bars_daily` |
+| `market_move_bars` | One-minute regular-session bars for the Nasdaq-100/S&P 500 union and benchmarks, every 15 minutes | `price_bars_minute` |
 | `macro_data` | FRED series + BLS series, 08:40 and 18:00 ET | `macro_observations` |
 | `inflation_nowcast` | Cleveland Fed inflation nowcasts, 10:30 ET | `inflation_nowcasts` |
 | `calendars_daily` | BLS release calendar, FRED release dates, FOMC dates (Fed), earnings dates (Tradier) | `econ_events`, `earnings_events` |
@@ -62,6 +64,36 @@ Documentation:
 
 Every processed SEC filing also gets a row in the `sec_filings` ledger (loaded / skipped /
 failed, plus the reason), so coverage per day can be queried.
+
+## Minute candles and retention
+
+`market_move_bars` uses the reviewed `config/candle_universe.json` snapshot of Nasdaq-100
+and S&P 500 membership, plus SPY, QQQ and SMH (521 symbols). It makes no requests to
+constituent publishers. Membership changes require a reviewed snapshot update. The existing
+top-50 SPX signal universe remains independent.
+
+Collection uses two workers with 25 symbols per batch and at least 1.5 seconds between symbol
+requests per worker. New members receive eight calendar days of history. Subsequent requests
+overlap an hour to fill missed bars. Symbols such as BRK-B are requested as BRK/B from the provider
+and stored under the SEC symbol spelling. Historical first observations are retained on retries.
+
+`price_bars_minute` is range-partitioned by UTC day. Its migration preserves the existing candles.
+Nightly maintenance archives complete days older than 14 full UTC days under
+`s3://<bucket>/minute_bars/dt=YYYY-MM-DD/`. Each archive is compressed JSONL with OHLCV,
+timestamps, and a manifest. The job uploads, downloads, verifies its SHA-256 checksum and row
+count, verifies the manifest, and only then drops that day's partition. Daily candles stay in
+`price_bars_daily` and are outside this retention job.
+
+Set `MINUTE_ARCHIVE_BUCKET` (or use the existing `RAW_BUCKET`) and provide S3 PutObject/GetObject
+access through the existing AWS configuration. When sharing a bucket across environments, set
+`MINUTE_ARCHIVE_PREFIX=minute_bars/local` locally to keep production manifests separate. With neither bucket set, archival reports a skip
+and retains the Postgres rows. With failed verification, the affected partition is retained and
+the task retries. Archives are permanent unless the bucket has a separate lifecycle policy.
+Rows in the default partition trigger an error so they cannot silently evade retention.
+
+After updating, run warehouse migrations before unpausing `market_move_bars` and `maintenance`.
+The initial collection is larger than an incremental run. The public move UI still focuses on
+the past seven days and reads Postgres.
 
 ## Trading-day signals
 
@@ -122,6 +154,7 @@ A public, read-only HTTP API (no key; rate limited per IP). Every response is
 | `GET /api/v1/stream/events?stream=events\|feed` | Server-Sent Events: high-impact events, or every new stream item; resumes from `Last-Event-ID` |
 | `GET /api/v1/articles?ticker=AAON&formType=8-K&days=7` | Filings and news with their latest classification |
 | `GET /api/v1/events?type=guidance_lowered&minProb=0.8` | Items the classifier flags with an event type |
+| `GET /api/v1/tickers/{ticker}/move-explanation?start=…&end=…&asOf=…` | Evidence around a specific move window and an optional replay cutoff. [Try the NVDA fixture](examples/README.md#move-explanation). |
 | `GET /api/v1/tickers/{ticker}/sentiment?days=30` | Daily sentiment for one ticker |
 | `GET /api/v1/tickers/{ticker}/insider-trades?days=90` | Form 4 transactions and net open-market value |
 | `GET /api/v1/signals/latest` | The latest premarket and SPX overnight signals with their inputs |

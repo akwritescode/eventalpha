@@ -1,5 +1,6 @@
 package com.eventalpha.api;
 
+import java.time.Duration;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
@@ -14,12 +15,14 @@ class TestcontainersConfiguration {
     @Bean
     @ServiceConnection
     PostgreSQLContainer postgresContainer() {
-        return new PostgreSQLContainer(DockerImageName.parse("postgres:18"));
+        return new PostgreSQLContainer(DockerImageName.parse("postgres:18"))
+                .withStartupTimeout(Duration.ofMinutes(3));
     }
 
     @Bean
     @ServiceConnection(name = "redis")
     GenericContainer<?> redisContainer() {
-        return new GenericContainer<>(DockerImageName.parse("redis:8")).withExposedPorts(6379);
+        return new GenericContainer<>(DockerImageName.parse("redis:8")).withExposedPorts(6379)
+                .withStartupTimeout(Duration.ofMinutes(3));
     }
 }

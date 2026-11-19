@@ -50,6 +50,9 @@ class ApiIntegrationTests {
     MockMvc mvc;
 
     @Autowired
+    org.springframework.jdbc.core.simple.JdbcClient jdbc;
+
+    @Autowired
     StringRedisTemplate redis;
 
     @LocalServerPort
@@ -105,6 +108,275 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.data", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].title").value("AAON 8-K: Guidance cut"))
                 .andExpect(jsonPath("$.data[0].score.events.guidance_lowered").value(0.95));
+    }
+
+    @Test
+    @Sql("/db/move-window.sql")
+    void moveExplanationGroupsSourcesAndReplaysAvailability() throws Exception {
+        String path = "/api/v1/tickers/nvda/move-explanation";
+        String start = "2025-04-15T17:20:00-04:00";
+        String end = "2025-04-15T17:35:00-04:00";
+
+        mvc.perform(get(path).param("start", start).param("end", end))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline", hasSize(4)))
+                .andExpect(jsonPath("$.data.timeline[0].publishedAt").value("2025-04-15T21:22:59Z"))
+                .andExpect(jsonPath("$.data.timeline[0].firstSeenAt").value("2025-04-15T21:26:00Z"))
+                .andExpect(jsonPath("$.data.timeline[0].status").value("original_source"))
+                .andExpect(jsonPath("$.data.timeline[0].timing").value("during"))
+                .andExpect(jsonPath("$.data.timeline[3].timing").value("after"))
+                .andExpect(jsonPath("$.data.timeline[3].status").value("unverified_lead"))
+                .andExpect(jsonPath("$.data.catalysts", hasSize(1)))
+                .andExpect(result -> {
+                    var body = JsonPath.parse(result.getResponse().getContentAsString());
+                    String original = body.read("$.data.timeline[0].id");
+                    assertThat(body.<String>read("$.data.timeline[1].originalId")).isEqualTo(original);
+                    assertThat(body.<String>read("$.data.timeline[2].originalId")).isEqualTo(original);
+                    assertThat(body.<String>read("$.data.catalysts[0].evidenceId")).isEqualTo(original);
+                });
+
+        mvc.perform(get(path).param("start", start).param("end", end).param("asOf", "2025-04-15T17:24:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline", hasSize(0)))
+                .andExpect(jsonPath("$.data.summary").value("No clear catalyst found"));
+
+        mvc.perform(get(path).param("start", start).param("end", end).param("asOf", "2025-04-15T17:26:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline", hasSize(2)))
+                .andExpect(jsonPath("$.data.timeline[1].status").value("unverified_lead"))
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)));
+
+        mvc.perform(get(path).param("start", "2025-04-15T17:24:00-04:00").param("end", end).param("asOf", end))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline", hasSize(2)))
+                .andExpect(jsonPath("$.data.timeline[0].timing").value("before"))
+                .andExpect(jsonPath("$.data.timeline[1].status").value("verified_discovery"))
+                .andExpect(jsonPath("$.data.catalysts", hasSize(1)));
+
+        mvc.perform(get(path).param("start", start).param("end", "2025-04-15T17:22:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline[0].timing").value("after"))
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)));
+
+        mvc.perform(get(path).param("start", end).param("end", start))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @Sql("/db/move-prices.sql")
+    void moveExplanationUsesSecDirectlyAndComparesAlignedBars() throws Exception {
+        String path = "/api/v1/tickers/nvda/move-explanation";
+        String start = "2025-06-10T10:24:00-04:00";
+        String end = "2025-06-10T10:39:00-04:00";
+        mvc.perform(get(path).param("start", start).param("end", end))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline", hasSize(1)))
+                .andExpect(jsonPath("$.data.catalysts[0].summary").value("NVDA 8-K: Guidance update"))
+                .andExpect(jsonPath("$.data.priceMoves", hasSize(3)))
+                .andExpect(jsonPath("$.data.priceMoves[0].symbol").value("NVDA"))
+                .andExpect(jsonPath("$.data.priceMoves[0].returnPercent").value(closeTo(-2.5, 0.0001), Double.class))
+                .andExpect(jsonPath("$.data.priceMoves[1].symbol").value("SPY"))
+                .andExpect(jsonPath("$.data.priceMoves[1].returnPercent").value(closeTo(-0.2, 0.0001), Double.class))
+                .andExpect(jsonPath("$.data.priceMoves[2].symbol").value("SMH"))
+                .andExpect(jsonPath("$.data.priceMoves[2].returnPercent").value(closeTo(-1.0, 0.0001), Double.class));
+        mvc.perform(get(path).param("start", start).param("end", end).param("asOf", end))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline", hasSize(1)))
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
+                .andExpect(jsonPath("$.data.priceMoves", hasSize(3)));
+        mvc.perform(get(path).param("start", start).param("end", "2025-06-10T10:40:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.priceMoves", hasSize(3)))
+                .andExpect(jsonPath("$.data.priceMoves[0].symbol").value("NVDA"));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @Sql("/db/move-window.sql")
+    void verifiedDiscoveryRetainsOlderOriginalOutsideContextRange() throws Exception {
+        jdbc.sql("""
+                UPDATE articles SET published_at = '2025-04-10 17:22-04',
+                    ingested_at = '2025-04-10 17:26-04', updated_at = '2025-04-10 17:26-04'
+                WHERE source_id = 'demo-move-0001045810-25-000082'
+                """).update();
+        mvc.perform(get("/api/v1/tickers/NVDA/move-explanation")
+                        .param("start", "2025-04-15T17:20:00-04:00")
+                        .param("end", "2025-04-15T17:35:00-04:00")
+                        .param("asOf", "2025-04-15T17:35:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline[0].status").value("original_source"))
+                .andExpect(jsonPath("$.data.timeline[1].status").value("verified_discovery"));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @Sql("/db/move-prices.sql")
+    void anOpeningBarAloneCannotMeasureAnAfterHoursOrWeekendMove() throws Exception {
+        for (var bounds : List.of(
+                List.of("2025-06-10T17:20:00-04:00", "2025-06-10T17:35:00-04:00"),
+                List.of("2025-06-13T16:00:00-04:00", "2025-06-16T08:00:00-04:00"))) {
+            mvc.perform(get("/api/v1/tickers/NVDA/move-explanation")
+                            .param("start", bounds.get(0)).param("end", bounds.get(1)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.benchmarks", hasSize(2)))
+                    .andExpect(jsonPath("$.data.priceMoves", hasSize(0)));
+        }
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @Sql("/db/move-window.sql")
+    void aLeadCannotVerifyAgainstAnOriginalForAnotherTicker() throws Exception {
+        jdbc.sql("UPDATE articles SET tickers = '{AAPL}' WHERE source_id = 'demo-move-0001045810-25-000082'").update();
+        mvc.perform(get("/api/v1/tickers/NVDA/move-explanation")
+                        .param("start", "2025-04-15T17:20:00-04:00")
+                        .param("end", "2025-04-15T17:35:00-04:00")
+                        .param("asOf", "2025-04-15T17:35:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline", hasSize(1)))
+                .andExpect(jsonPath("$.data.timeline[0].status").value("unverified_lead"))
+                .andExpect(jsonPath("$.data.timeline[0].originalId").isEmpty());
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @Sql("/db/move-prices.sql")
+    void laggedPricesExposeMeasuredBoundariesAndHonorReplay() throws Exception {
+        mvc.perform(get("/api/v1/tickers/NVDA/move-explanation")
+                        .param("start", "2025-06-10T10:24:00-04:00")
+                        .param("end", "2025-06-10T11:00:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.priceMoves", hasSize(3)))
+                .andExpect(jsonPath("$.data.priceMoves[0].measuredStart").value("2025-06-10T14:24:00Z"))
+                .andExpect(jsonPath("$.data.priceMoves[0].measuredEnd").value("2025-06-10T14:40:00Z"))
+                .andExpect(jsonPath("$.data.priceMoves[0].dataAsOf").value("2025-06-10T14:42:00Z"));
+        mvc.perform(get("/api/v1/tickers/NVDA/move-explanation")
+                        .param("start", "2025-06-10T10:24:00-04:00")
+                        .param("end", "2025-06-10T10:39:00-04:00")
+                        .param("asOf", "2025-06-10T10:39:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.priceMoves[0].measuredEnd").value("2025-06-10T14:25:00Z"));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void todayHandlesMissingSessionTimes() throws Exception {
+        jdbc.sql("""
+                INSERT INTO market_sessions (day, is_open, description, source)
+                VALUES ((now() AT TIME ZONE 'America/New_York')::date, true, 'missing times', 'test')
+                ON CONFLICT (day) DO UPDATE SET is_open = true, open_time = NULL
+                """).update();
+        mvc.perform(get("/api/v1/move-window/today"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.message").value("Today's trading calendar is unavailable. Choose a start and end time below."));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @Sql("/db/move-prices.sql")
+    void materialFilingAfterWindowIsContextOnly() throws Exception {
+        mvc.perform(get("/api/v1/tickers/NVDA/move-explanation")
+                        .param("start", "2025-06-10T10:20:00-04:00")
+                        .param("end", "2025-06-10T10:25:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline[0].timing").value("after"))
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
+                .andExpect(jsonPath("$.data.summary").value("No clear catalyst found"));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @Sql("/db/move-prices.sql")
+    void prNewswireCanQualifyWithoutSocialDiscovery() throws Exception {
+        // The same material classified release can arrive directly through the existing RSS feed.
+        jdbc.sql("UPDATE articles SET source = 'rss:prnewswire_all' WHERE source_id = 'test-intraday-filing'")
+                .update();
+        mvc.perform(get("/api/v1/tickers/NVDA/move-explanation")
+                        .param("start", "2025-06-10T10:24:00-04:00")
+                        .param("end", "2025-06-10T10:39:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.catalysts", hasSize(1)));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @Sql("/db/move-prices.sql")
+    void muUsesItsOwnStoredMinutePrices() throws Exception {
+        jdbc.sql("""
+                INSERT INTO price_bars_minute (symbol, started_at, open, close, first_seen_at)
+                SELECT 'MU', started_at, open, close, first_seen_at FROM price_bars_minute WHERE symbol = 'NVDA'
+                """).update();
+        mvc.perform(get("/api/v1/tickers/MU/move-explanation")
+                        .param("start", "2025-06-10T10:24:00-04:00")
+                        .param("end", "2025-06-10T10:39:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.priceMoves[0].symbol").value("MU"))
+                .andExpect(jsonPath("$.data.priceMoves[0].returnPercent").value(closeTo(-2.5, 0.0001), Double.class));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void todayHandlesAClosedMarketDay() throws Exception {
+        jdbc.sql("""
+                INSERT INTO market_sessions (day, is_open, description, source)
+                VALUES ((now() AT TIME ZONE 'America/New_York')::date, false, 'test holiday', 'test')
+                ON CONFLICT (day) DO UPDATE SET is_open = false
+                """).update();
+        mvc.perform(get("/api/v1/move-window/today"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.message").value("The market is closed today. Choose a recent trading day below."));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void sinceYesterdaySkipsClosedDaysAndRespectsEarlyClose() throws Exception {
+        jdbc.sql("""
+                INSERT INTO market_sessions (day, is_open, open_time, close_time, description, source)
+                SELECT (now() AT TIME ZONE 'America/New_York')::date - n, n = 4,
+                       '09:30'::time, '13:00'::time, 'test calendar', 'test'
+                FROM generate_series(1, 7) n
+                ON CONFLICT (day) DO UPDATE SET is_open = EXCLUDED.is_open,
+                    open_time = EXCLUDED.open_time, close_time = EXCLUDED.close_time
+                """).update();
+        var date = java.time.LocalDate.now(java.time.ZoneId.of("America/New_York")).minusDays(4);
+        String close = date.atTime(13, 0).atZone(java.time.ZoneId.of("America/New_York")).toInstant().toString();
+        mvc.perform(get("/api/v1/move-window/since-yesterday"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.start").value(close));
+        String open = date.atTime(9, 30).atZone(java.time.ZoneId.of("America/New_York")).toInstant().toString();
+        mvc.perform(get("/api/v1/move-window/since-yesterday").param("anchor", "open"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.start").value(open));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void multiDayPricesUseTheCandleEndingAtPreviousClose() throws Exception {
+        jdbc.sql("""
+                INSERT INTO price_bars_minute (symbol, started_at, open, close, first_seen_at)
+                VALUES ('MU', '2025-06-06 12:59-04', 99, 100, '2025-06-06 13:02-04'),
+                       ('MU', '2025-06-10 10:38-04', 98, 97.5, '2025-06-10 10:42-04')
+                """).update();
+        mvc.perform(get("/api/v1/tickers/MU/move-explanation")
+                        .param("start", "2025-06-06T13:00:00-04:00")
+                        .param("end", "2025-06-10T10:39:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.priceMoves[0].symbol").value("MU"))
+                .andExpect(jsonPath("$.data.priceMoves[0].returnPercent").value(closeTo(-2.5, 0.0001), Double.class));
+    }
+
+    @Test
+    void tickerSearchFindsExistingSymbolsAndCompanyNames() throws Exception {
+        for (String query : List.of("aa", "aaon", "aaon, inc")) {
+            mvc.perform(get("/api/v1/tickers/search").param("q", query))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data[0].ticker").value("AAON"))
+                    .andExpect(jsonPath("$.data[0].name").value("AAON, INC."));
+        }
+        mvc.perform(get("/api/v1/tickers/search").param("q", "%"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(0)));
     }
 
     @Test

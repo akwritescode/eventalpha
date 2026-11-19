@@ -21,6 +21,7 @@ down:  ## Stop the local stack (data volumes are kept)
 
 seed:  ## Load demo data into an empty local warehouse (see examples/README.md)
 	docker compose exec -T warehouse-db psql -q -U eventalpha -d eventalpha < examples/demo-data.sql
+	docker compose exec -T warehouse-db psql -q -v ON_ERROR_STOP=1 --single-transaction -U eventalpha -d eventalpha -f - < examples/move-window.sql
 
 lint:  ## Ruff (lint + format check) and mypy
 	uv run ruff check .

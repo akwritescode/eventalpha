@@ -46,3 +46,9 @@ val alembicSchema = layout.projectDirectory.file("src/test/resources/db/schema.s
 tasks.named<Test>("test") {
     inputs.file(alembicSchema)
 }
+
+tasks.processTestResources {
+    from("../examples/move-window.sql") {
+        into("db")
+    }
+}

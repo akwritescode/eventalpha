@@ -68,3 +68,6 @@ VALUES ('mom', to_char(date_trunc('month', current_date - 2) - interval '1 month
 
 UPDATE signals SET message = '<b>SPX overnight</b>
 neutral +0.04' WHERE signal_type = 'spx_overnight' AND session_date = current_date - 1;
+
+-- Explicit fixture IDs above bypass the default sequence.
+SELECT setval(pg_get_serial_sequence('articles', 'id'), max(id)) FROM articles;
