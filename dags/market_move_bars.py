@@ -1,11 +1,11 @@
-"""Collect completed regular-session minute candles for the Nasdaq-100 / S&P 500 union."""
+"""Collect completed regular-session minute candles for every S&P 500, Nasdaq-100 and Dow 30 member."""
 
 from __future__ import annotations
 
 from datetime import timedelta
 
 from airflow.sdk import dag, task
-from eventalpha_common import DEFAULT_ARGS, START_DATE, chunk, engine, market_data, settings
+from eventalpha_common import DEFAULT_ARGS, START_DATE, chunk, engine, index_members_path, market_data, settings
 
 
 @dag(
@@ -20,9 +20,7 @@ from eventalpha_common import DEFAULT_ARGS, START_DATE, chunk, engine, market_da
 def market_move_bars():
     @task
     def plan() -> list[list[str]]:
-        import os
         from datetime import UTC, datetime
-        from pathlib import Path
 
         from eventalpha.marketdata.storage import ensure_partitions
         from eventalpha.marketdata.universe import collection_symbols
@@ -31,10 +29,7 @@ def market_move_bars():
             return []
         now = datetime.now(UTC)
         db = engine()
-        feeds_config = os.environ.get("FEEDS_CONFIG")
-        if not feeds_config:
-            raise ValueError("FEEDS_CONFIG must point to the feed configuration file")
-        symbols = collection_symbols(db, Path(feeds_config).with_name("candle_universe.json"), now)
+        symbols = collection_symbols(db, index_members_path())
         ensure_partitions(db, now.date() - timedelta(days=8), now.date() + timedelta(days=7))
         return chunk(symbols, 25)
 
