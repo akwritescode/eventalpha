@@ -4,6 +4,7 @@ and `alembic check` fails CI if the two drift."""
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -79,6 +80,28 @@ articles = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("source", "source_id", name="uq_articles_source_source_id"),
     Index("ix_articles_tickers", "tickers", postgresql_using="gin"),
+)
+
+# Social discovery stays outside articles, the raw landing zone, and the classifier.
+x_leads = Table(
+    "x_leads",
+    metadata,
+    Column("post_id", String(20), primary_key=True),
+    Column("ticker", String(16), nullable=False),
+    Column("paraphrase", String(280), nullable=False),
+    Column("published_at", DateTime(timezone=True), nullable=False),
+    Column("first_seen_at", DateTime(timezone=True), nullable=False, server_default=func.statement_timestamp()),
+    Column("article_id", BigInteger, ForeignKey("articles.id", ondelete="CASCADE")),
+    Column("article_content_hash", String(64)),
+    Column("verified_at", DateTime(timezone=True)),
+    CheckConstraint(
+        "(article_id IS NULL AND article_content_hash IS NULL AND verified_at IS NULL) OR "
+        "(article_id IS NOT NULL AND article_content_hash IS NOT NULL AND verified_at IS NOT NULL "
+        "AND verified_at >= first_seen_at)",
+        name="ck_x_leads_verification",
+    ),
+    Index("ix_x_leads_ticker_published_at", "ticker", "published_at"),
+    Index("ix_x_leads_article_id", "article_id"),
 )
 
 # One row per (article, model, question set). A new classifier model or a revised question set
