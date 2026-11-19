@@ -59,7 +59,7 @@ def test_weighted_mean_clip_and_json_helpers():
 
 def test_overnight_blends_megacap_and_breadth_news(warehouse):
     warehouse["articles"] = [
-        scored(1, "1045810", ["NVDA"], 0.8, 3.0),  # top-50 company
+        scored(1, "1045810", ["NVDA"], 0.8, 3.0),  # top-100 company
         scored(2, None, ["SMOL"], -0.4, 1.5),  # breadth only
         scored(3, None, ["NOISE"], 0.9, 3.0, specific=0.2),  # not company-specific: ignored
     ]

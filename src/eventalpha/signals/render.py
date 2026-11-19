@@ -58,7 +58,7 @@ def render_spx_overnight(s: Signal) -> str:
     ]
     c = p["counts"]
     lines.append(
-        f"news: {c['company_specific']} company items ({c['megacap_articles']} top-50)"
+        f"news: {c['company_specific']} company items ({c['megacap_articles']} top-100)"
         + (f", <b>{c['unscored']} not yet scored</b>" if c["unscored"] else "")
     )
     for a in p["megacap_news"][:5]:

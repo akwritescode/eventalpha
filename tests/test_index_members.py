@@ -83,3 +83,17 @@ def test_refresh_output_round_trips_through_the_loader(tmp_path):
     snapshot = load_snapshot(ROOT / "config/index_members.json")
     (tmp_path / "out.json").write_text(script.render(snapshot))
     assert load_snapshot(tmp_path / "out.json") == snapshot
+
+
+def test_spx_refresh_groups_share_classes_by_company():
+    spec = importlib.util.spec_from_file_location("refresh_spx_universe", ROOT / "scripts/refresh_spx_universe.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    universe = [("GOOG", "1652044", 7422), ("GOOGL", "1652044", 4), ("PANW", "1327567", 48), ("FOX", "1754301", None)]
+    # The SEC's larger listing comes first (it's the one priced); unknown CIKs stay on their own.
+    assert module.group_by_company(["GOOG", "PANW", "GOOGL", "FOX", "ZZZZ"], universe) == [
+        ["FOX"],
+        ["GOOGL", "GOOG"],
+        ["PANW"],
+        ["ZZZZ"],
+    ]

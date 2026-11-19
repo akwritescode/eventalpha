@@ -19,7 +19,7 @@ from eventalpha.signals.universe import Universe
 
 MIN_COMPANY_SPECIFIC = 0.8
 MIN_MATERIALITY = 1.5  # 0 routine .. 3 major
-MEGACAP_WEIGHT = 0.6  # share of the SPX score from top-50 news; the rest is breadth
+MEGACAP_WEIGHT = 0.6  # share of the SPX score from top-100 news; the rest is breadth
 TOP_TICKERS = 15
 
 
@@ -136,7 +136,7 @@ def build_spx_overnight(
         if company:
             megacap.append((a, company))
 
-    # Top-50 news: each article's sentiment weighted by market-cap weight × materiality.
+    # Top-100 news (config/spx_universe.yaml): each article's sentiment weighted by market-cap weight × materiality.
     mega_score = _weighted([(a.sentiment_score, c.weight * a.materiality / 3) for a, c in megacap])
     # Breadth: every company-specific article, weighted by materiality.
     breadth_score = _weighted([(a.sentiment_score, a.materiality / 3) for a in company_news])
