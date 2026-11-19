@@ -10,7 +10,7 @@ from an as-of replay.
 ```mermaid
 flowchart LR
     N[Reviewed constituent snapshot] --> U[Universe load]
-    U --> M[(minute_universe_members)]
+    U --> M[(index_members)]
     M --> A[Airflow batch planner]
     A --> C[Market-data provider adapter]
     C --> P[(Daily UTC minute partitions)]
@@ -30,11 +30,11 @@ retry policy.
 ## Universe and request budget
 
 `src/eventalpha/marketdata/universe.py` uses only the reviewed checked-in
-`config/candle_universe.json` snapshot. The snapshot records provenance and observation date.
+`config/index_members.json` snapshot (S&P 500, Nasdaq-100 and Dow 30; see the README). The snapshot records provenance and observation date.
 It contains 101 Nasdaq-100 listings and 503 S&P 500 listings, deduplicated to 521 symbols
 including SPY, QQQ and SMH. There are no automatic publisher requests or browser impersonation.
 An operator must review membership changes and replace the snapshot in a pull request.
-`minute_universe_members` records the snapshot membership and its original `fetched_at`.
+`index_members` records the snapshot membership and its original `fetched_at`.
 Malformed snapshots fail explicitly rather than replacing the stored membership partially.
 
 The DAG creates required partitions before mapping collection tasks. It divides the symbol set into batches of 25, with at most two active batch
@@ -238,7 +238,7 @@ both in order; existing installations retain their upgrade path without rewritin
 
 Unchanged constituent snapshot timestamps and row counts leave membership rows untouched.
 Publisher URLs and spreadsheet parsers are removed; snapshot updates require a reviewed edit
-of `config/candle_universe.json` with its provenance and observation timestamp.
+of `config/index_members.json` (via `scripts/refresh_index_members.py`) with its provenance and observation timestamp.
 
 The shared demo fixture is `web/src/fixtures/move-demo.json`. Both UI bounds and the generated
 SQL seed derive from it. Run `python scripts/render_move_demo.py` after editing it; the fixture
