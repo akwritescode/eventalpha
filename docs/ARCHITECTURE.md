@@ -126,13 +126,13 @@ this public project uses the official sources above instead (no consensus foreca
 ## Signals
 
 `signals/` builds the two trading-day alerts (`build.py`), reads inputs with their freshness
-(`inputs.py`), renders Telegram HTML (`render.py`), and loads the SPX top-50 list
+(`inputs.py`), renders Telegram HTML (`render.py`), and loads the SPX top-100 list
 (`universe.py`, `config/spx_universe.yaml`). Each signal is stored in `signals` with its full
 payload and the timestamp of every input, so it can be replayed and evaluated.
 
 | Signal | Window | Score | Confidence |
 |---|---|---|---|
-| `spx_overnight` | Previous session's signal time → now | 0.6 × top-50 news (sentiment × market-cap weight × materiality) + 0.4 × breadth (all company-specific news × materiality), clipped to [-1, 1] | scored share × (0.4 × news volume + 0.6 × top-50 companies covered) |
+| `spx_overnight` | Previous session's signal time → now | 0.6 × top-100 news (sentiment × market-cap weight × materiality) + 0.4 × breadth (all company-specific news × materiality), clipped to [-1, 1] | scored share × (0.4 × news volume + 0.6 × top-100 companies covered) |
 | `premarket` | Previous session's close → 09:15 | Materiality-weighted news tone (context; the ranked list is the product) | News volume |
 
 ## Repository layout
