@@ -308,5 +308,93 @@ ALTER TABLE ticker_universe ADD COLUMN size_rank INTEGER;
 
 UPDATE alembic_version SET version_num='c492226ac7ac' WHERE alembic_version.version_num = '973a74d4fd9a';
 
+-- Running upgrade c492226ac7ac -> f8b35af44a10
+
+CREATE TABLE x_leads (
+    post_id VARCHAR(20) NOT NULL, 
+    ticker VARCHAR(16) NOT NULL, 
+    paraphrase VARCHAR(280) NOT NULL, 
+    published_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+    first_seen_at TIMESTAMP WITH TIME ZONE DEFAULT statement_timestamp() NOT NULL, 
+    article_id BIGINT, 
+    article_content_hash VARCHAR(64), 
+    verified_at TIMESTAMP WITH TIME ZONE, 
+    PRIMARY KEY (post_id), 
+    CONSTRAINT ck_x_leads_verification CHECK ((article_id IS NULL AND article_content_hash IS NULL AND verified_at IS NULL) OR (article_id IS NOT NULL AND article_content_hash IS NOT NULL AND verified_at IS NOT NULL AND verified_at >= first_seen_at)), 
+    FOREIGN KEY(article_id) REFERENCES articles (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_x_leads_ticker_published_at ON x_leads (ticker, published_at);
+
+CREATE INDEX ix_x_leads_article_id ON x_leads (article_id);
+
+UPDATE alembic_version SET version_num='f8b35af44a10' WHERE alembic_version.version_num = 'c492226ac7ac';
+
+-- Running upgrade f8b35af44a10 -> 78d93c0ea314
+
+CREATE TABLE price_bars_minute (
+    symbol VARCHAR(16) NOT NULL, 
+    started_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+    open NUMERIC NOT NULL, 
+    close NUMERIC NOT NULL, 
+    first_seen_at TIMESTAMP WITH TIME ZONE DEFAULT statement_timestamp() NOT NULL, 
+    PRIMARY KEY (symbol, started_at)
+);
+
+UPDATE alembic_version SET version_num='78d93c0ea314' WHERE alembic_version.version_num = 'f8b35af44a10';
+
+-- Running upgrade 78d93c0ea314 -> b6a729ce18f0
+
+CREATE TABLE minute_universe_members (
+    index_name VARCHAR(16) NOT NULL, 
+    symbol VARCHAR(16) NOT NULL, 
+    fetched_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+    PRIMARY KEY (index_name, symbol)
+);
+
+ALTER TABLE price_bars_minute RENAME TO price_bars_minute_legacy;
+
+ALTER TABLE price_bars_minute_legacy RENAME CONSTRAINT price_bars_minute_pkey TO price_bars_minute_legacy_pkey;
+
+CREATE TABLE price_bars_minute (
+    symbol VARCHAR(16) NOT NULL, 
+    started_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+    open NUMERIC NOT NULL, 
+    close NUMERIC NOT NULL, 
+    high NUMERIC, 
+    low NUMERIC, 
+    volume BIGINT, 
+    first_seen_at TIMESTAMP WITH TIME ZONE DEFAULT statement_timestamp() NOT NULL, 
+    PRIMARY KEY (symbol, started_at)
+)
+ PARTITION BY RANGE (started_at);
+
+DO $$
+        DECLARE
+            d date;
+            first_day date;
+            last_day date;
+        BEGIN
+            SELECT LEAST(COALESCE((min(started_at) AT TIME ZONE 'UTC')::date, current_date), current_date - 14),
+                   GREATEST(COALESCE((max(started_at) AT TIME ZONE 'UTC')::date, current_date), current_date + 7)
+            INTO first_day, last_day FROM price_bars_minute_legacy;
+            d := first_day;
+            WHILE d <= last_day LOOP
+                EXECUTE format('CREATE TABLE %I PARTITION OF price_bars_minute FOR VALUES FROM (%L) TO (%L)',
+                    'price_bars_minute_p' || to_char(d, 'YYYYMMDD'),
+                    d::text || ' 00:00:00+00', (d + 1)::text || ' 00:00:00+00');
+                d := d + 1;
+            END LOOP;
+        END $$;;
+
+INSERT INTO price_bars_minute (symbol, started_at, open, close, first_seen_at)
+        SELECT symbol, started_at, open, close, first_seen_at FROM price_bars_minute_legacy;
+
+DROP TABLE price_bars_minute_legacy;
+
+CREATE TABLE price_bars_minute_default PARTITION OF price_bars_minute DEFAULT;
+
+UPDATE alembic_version SET version_num='b6a729ce18f0' WHERE alembic_version.version_num = '78d93c0ea314';
+
 COMMIT;
 

@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import httpx
@@ -54,6 +54,40 @@ def test_tradier_history_skips_incomplete_bars_and_null():
     assert [b.day for b in bars] == [date(2026, 11, 12)]
     empty = TradierMarketData("k", transport=transport({"/markets/history": {"history": "null"}}))
     assert empty.daily_bars("SPY", date(2026, 11, 12), date(2026, 11, 13)) == []
+
+
+def test_tradier_minute_bars_use_eastern_request_and_exclude_unfinished_bars():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/markets/timesales")
+        assert dict(request.url.params) == {
+            "symbol": "NVDA",
+            "interval": "1min",
+            "session_filter": "open",
+            "start": "2025-06-10 10:24",
+            "end": "2025-06-10 10:26",
+        }
+        return httpx.Response(
+            200,
+            json={
+                "series": {
+                    "data": [
+                        {"time": "2025-06-10T10:26:00", "open": 120, "close": 125},
+                        {"time": "2025-06-10T10:25:00-04:00", "open": 99, "close": 97.5},
+                        {"time": "2025-06-10T10:24:00", "open": 100, "close": 99},
+                    ]
+                }
+            },
+        )
+
+    with httpx.MockTransport(handler) as mock:
+        md = TradierMarketData("k", transport=mock)
+        bars = md.minute_bars(
+            "NVDA", datetime(2025, 6, 10, 14, 24, tzinfo=UTC), datetime(2025, 6, 10, 14, 26, tzinfo=UTC)
+        )
+        md.close()
+    assert [b.started_at.minute for b in bars] == [24, 25]
+    assert all(b.started_at.tzinfo == UTC for b in bars)
+    assert bars[-1].close == Decimal("97.5")
 
 
 def test_tradier_calendar_marks_early_close():
@@ -149,8 +183,6 @@ def test_bls_calendar_and_series():
 
 
 # ---------- calendars, nowcasts, sessions, intraday SEC ----------
-
-from datetime import datetime, timedelta  # noqa: E402
 
 from eventalpha.calendars import earnings_rows, fomc_event_rows, fred_event_rows  # noqa: E402
 from eventalpha.macro.fred import ReleaseDate  # noqa: E402
@@ -368,3 +400,12 @@ def test_fred_and_bls_skip_malformed_observations():
     }
     bls = BlsClient(None, "test agent", transport=transport({"/publicAPI/v2/timeseries/data/": bls_body}))
     assert [(o.series_id, o.period) for o in bls.series(["CUSR0000SA0"], 2026, 2026)] == [("CUSR0000SA0", "M10")]
+
+
+@pytest.mark.parametrize(
+    "value, expected", [("1234.0", 1234), ("broken", None), ("NaN", None), ("Infinity", None), (None, None)]
+)
+def test_minute_volume_is_tolerant(value, expected):
+    from eventalpha.marketdata.providers.tradier import _volume
+
+    assert _volume(value) == expected

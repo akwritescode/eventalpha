@@ -17,6 +17,7 @@ if config.config_file_name is not None:
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 import os
+import re
 
 from eventalpha.schema import metadata
 
@@ -30,6 +31,11 @@ config.set_main_option(
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
+
+
+def include_name(name, type_, parent_names):
+    # Daily partitions are owned by partition maintenance, not independent schema models.
+    return not (type_ == "table" and re.fullmatch(r"price_bars_minute_(?:p[0-9]{8}|default)", name or ""))
 
 
 def run_migrations_offline() -> None:
@@ -70,7 +76,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(connection=connection, target_metadata=target_metadata, include_name=include_name)
 
         with context.begin_transaction():
             context.run_migrations()

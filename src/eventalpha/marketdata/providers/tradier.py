@@ -7,7 +7,7 @@ the broker's own session calendar, holidays and 13:00 early closes included.
 from __future__ import annotations
 
 import time as _time
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from eventalpha.config import Settings
-from eventalpha.marketdata.base import DailyBar, EarningsEvent, MarketDataError, Quote, SessionDay
+from eventalpha.marketdata.base import DailyBar, EarningsEvent, MarketDataError, MinuteBar, Quote, SessionDay
 
 BASE_URL = "https://api.tradier.com/v1"
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
@@ -28,6 +28,11 @@ def _dec(v: Any) -> Decimal | None:
         return Decimal(str(v))
     except InvalidOperation:
         return None
+
+
+def _volume(value: Any) -> int | None:
+    parsed = _dec(value)
+    return int(parsed) if parsed is not None and parsed.is_finite() and parsed >= 0 else None
 
 
 def _as_list(v: Any) -> list[dict]:
@@ -119,6 +124,44 @@ class TradierMarketData:
             vol = d.get("volume")
             bars.append(DailyBar(symbol, date.fromisoformat(d["date"]), o, h, lo, c, int(vol) if vol else None))
         return sorted(bars, key=lambda b: b.day)
+
+    def minute_bars(self, symbol: str, start: datetime, end: datetime) -> list[MinuteBar]:
+        if start.utcoffset() is None or end.utcoffset() is None:
+            raise ValueError("Expected offset-aware bar bounds")
+        data = self._get(
+            "/markets/timesales",
+            {
+                "symbol": symbol,
+                "interval": "1min",
+                "session_filter": "open",
+                "start": start.astimezone(NY).strftime("%Y-%m-%d %H:%M"),
+                "end": end.astimezone(NY).strftime("%Y-%m-%d %H:%M"),
+            },
+        )
+        series = data.get("series")
+        bars = {}
+        for point in _as_list(series.get("data") if isinstance(series, dict) else None):
+            try:
+                ts = datetime.fromisoformat(point["time"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            ts = (ts if ts.tzinfo else ts.replace(tzinfo=NY)).astimezone(UTC)
+            if ts < start or ts + timedelta(minutes=1) > end:
+                continue
+            opened, closed = _dec(point.get("open")), _dec(point.get("close"))
+            if opened is None or closed is None or not opened.is_finite() or not closed.is_finite():
+                continue
+            if opened > 0 and closed > 0:
+                bars[ts] = MinuteBar(
+                    symbol,
+                    ts,
+                    opened,
+                    closed,
+                    _dec(point.get("high")),
+                    _dec(point.get("low")),
+                    _volume(point.get("volume")),
+                )
+        return sorted(bars.values(), key=lambda bar: bar.started_at)
 
     def session_calendar(self, year: int, month: int) -> list[SessionDay]:
         data = self._get("/markets/calendar", {"year": year, "month": month}, need_key=False)

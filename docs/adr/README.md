@@ -10,6 +10,7 @@ costs. A decision that's later reversed gets a new record that supersedes the ol
 | [0003](0003-vendor-neutral-classification.md) | Text classification sits behind a provider-neutral interface | Accepted |
 | [0004](0004-official-data-sources-only.md) | Only official or licensed data sources, no scraping | Accepted |
 | [0005](0005-web-ui-on-vercel.md) | The web UI is served by Vercel and calls the API directly | Accepted |
+| [0006](0006-partitioned-minute-candles-and-s3-archives.md) | Daily minute-candle partitions with verified S3 archives and two-week hot retention | Accepted |
 
 New record: copy the structure below into `NNNN-short-title.md`.
 
