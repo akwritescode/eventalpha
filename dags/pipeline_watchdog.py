@@ -18,9 +18,10 @@ data just stops (this is how the news feed sat empty until its DAG was unpaused)
 from __future__ import annotations
 
 import os
+from datetime import date
 
 from airflow.sdk import dag, task
-from eventalpha_common import DEFAULT_ARGS, START_DATE, settings
+from eventalpha_common import DEFAULT_ARGS, START_DATE, index_members, settings, universe
 
 # DAGs paused on purpose, never reported. Empty: every DAG in this repo should be running.
 IGNORE: tuple[str, ...] = ()
@@ -57,6 +58,13 @@ def pipeline_watchdog():
 
         paused = watchdog.paused_dags(dags, ignore=IGNORE)
         broken = watchdog.broken_files(errors.get("import_errors", []))
+        stale = watchdog.stale_references(
+            {
+                "config/index_members.json": index_members().as_of.date(),
+                "config/spx_universe.yaml": date.fromisoformat(universe().as_of),
+            },
+            date.today(),
+        )
 
         if settings().redis_url:  # report each problem once per 12 h
             import redis
@@ -64,18 +72,21 @@ def pipeline_watchdog():
             with redis.Redis.from_url(settings().redis_url, decode_responses=True) as r:
                 watchdog.clear(r, "paused", [d["dag_id"] for d in dags if d["dag_id"] not in paused])
                 watchdog.forget_resolved(r, "broken", broken)  # fixed files drop off the error list
+                watchdog.forget_resolved(r, "stale", stale)
                 new_paused = watchdog.due(r, "paused", paused)
                 new_broken = watchdog.due(r, "broken", broken)
+                new_stale = watchdog.due(r, "stale", stale, hours=watchdog.STALE_REPEAT_HOURS)
         else:
-            new_paused, new_broken = paused, broken
+            new_paused, new_broken, new_stale = paused, broken, stale
 
-        text = watchdog.format_alert(new_paused, new_broken)
+        text = watchdog.format_alert(new_paused, new_broken, new_stale)
         sent = bool(text) and send_telegram(settings(), text, ops=True)  # ops chat, never the channel
         if text and not sent and settings().redis_url:  # not delivered: try again next hour
             with redis.Redis.from_url(settings().redis_url, decode_responses=True) as r:
                 watchdog.clear(r, "paused", new_paused)
                 watchdog.clear(r, "broken", new_broken)
-        return {"paused": paused, "broken": broken, "alerted": sent}
+                watchdog.clear(r, "stale", new_stale)
+        return {"paused": paused, "broken": broken, "stale": stale, "alerted": sent}
 
     check()
 

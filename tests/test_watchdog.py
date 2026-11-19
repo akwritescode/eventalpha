@@ -63,3 +63,15 @@ def test_failure_alert_survives_a_missing_map_index():
 
     ti = SimpleNamespace(dag_id="d", task_id="t", map_index=None, try_number=1)
     assert "d" in format_task_failure({"task_instance": ti, "run_id": "r", "exception": None})
+
+
+def test_reference_files_older_than_a_quarter_are_flagged_with_their_date():
+    from datetime import date
+
+    today = date(2026, 11, 19)
+    stale = watchdog.stale_references(
+        {"config/index_members.json": date(2026, 11, 19), "config/spx_universe.yaml": date(2026, 8, 1)}, today
+    )
+    assert stale == ["config/spx_universe.yaml (as of 2026-08-01, 110 days)"]
+    text = watchdog.format_alert([], [], stale)
+    assert "quarterly refresh" in text and "spx_universe.yaml" in text
