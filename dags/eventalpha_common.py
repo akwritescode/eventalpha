@@ -100,6 +100,23 @@ def universe():
     return load_universe(Path(os.environ.get("UNIVERSE_CONFIG", "/opt/airflow/project/config/spx_universe.yaml")))
 
 
+def index_members_path():
+    """config/index_members.json, next to the SPX universe file."""
+    import os
+    from pathlib import Path
+
+    config = Path(os.environ.get("UNIVERSE_CONFIG", "/opt/airflow/project/config/spx_universe.yaml")).parent
+    return config / "index_members.json"
+
+
+def index_members():
+    """S&P 500, Nasdaq-100 and Dow 30 members from the reviewed snapshot (not cached: a
+    long-lived worker must see a merged rebalance without a restart)."""
+    from eventalpha.index_members import load_snapshot
+
+    return load_snapshot(index_members_path())
+
+
 @cache
 def company_matcher():
     """Company names → tickers for news items (SEC ticker list + config/company_aliases.yaml)."""

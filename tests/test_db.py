@@ -297,44 +297,38 @@ def test_minute_partition_migration_preserves_existing_candles(engine: Engine):
 
 
 def test_collection_universe_uses_reviewed_snapshot_without_network(engine: Engine, monkeypatch):
-    import json
     from pathlib import Path
 
     import httpx
 
+    from eventalpha.index_members import load_snapshot
     from eventalpha.marketdata import universe
 
-    snapshot = Path("config/candle_universe.json")
-    data = json.loads(snapshot.read_text())
-    members = {name: data[name] for name in ("sp500", "nasdaq100")}
+    snapshot = Path("config/index_members.json")
+    members = load_snapshot(snapshot).members
 
     def unexpected_request(*args, **kwargs):
         raise AssertionError("Constituent collection must not make HTTP requests")
 
     monkeypatch.setattr(httpx.Client, "request", unexpected_request)
-    now = datetime.now(UTC)
+    query = "SELECT index_name, symbol, xmin::text FROM index_members ORDER BY 1, 2"
     try:
-        symbols = universe.collection_symbols(engine, snapshot, now)
-        assert symbols == sorted(set(members["sp500"] + members["nasdaq100"]) | universe.BENCHMARKS)
-        assert "AMD" in symbols and "MU" in symbols and "BRK-B" in symbols
+        symbols = universe.collection_symbols(engine, snapshot)
+        assert symbols == sorted(set().union(*members.values()) | universe.BENCHMARKS)
+        assert {"AMD", "MU", "BRK-B", "PANW"} <= set(symbols)
         with engine.connect() as conn:
-            original_versions = conn.execute(
-                text("SELECT index_name, symbol, xmin::text FROM minute_universe_members ORDER BY 1, 2")
-            ).all()
+            original_versions = conn.execute(text(query)).all()
 
-        assert universe.collection_symbols(engine, snapshot, now + timedelta(days=1)) == symbols
+        # An unchanged snapshot leaves the rows untouched (same xmin), so no churn every 15 minutes.
+        assert universe.collection_symbols(engine, snapshot) == symbols
         with engine.connect() as conn:
-            assert (
-                conn.execute(
-                    text("SELECT index_name, symbol, xmin::text FROM minute_universe_members ORDER BY 1, 2")
-                ).all()
-                == original_versions
-            )
-        with engine.connect() as conn:
-            assert conn.scalar(text("SELECT count(*) FROM minute_universe_members")) == sum(map(len, members.values()))
+            assert conn.execute(text(query)).all() == original_versions
+            counts = dict(conn.execute(text("SELECT index_name, count(*) FROM index_members GROUP BY 1")).all())
+        assert counts == {name: len(symbols) for name, symbols in members.items()}
+        assert counts["dow30"] == 30
     finally:
         with engine.begin() as conn:
-            conn.execute(text("TRUNCATE minute_universe_members"))
+            conn.execute(text("TRUNCATE index_members"))
 
 
 def test_partition_creation_moves_overlapping_default_rows(engine: Engine):
