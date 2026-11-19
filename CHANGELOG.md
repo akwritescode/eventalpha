@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0](https://github.com/akwritescode/eventalpha/compare/v0.1.1...v0.2.0) (2026-11-19)
+
+
+### Features
+
+* **api:** explain move windows with replay-safe source timelines ([a198ab6](https://github.com/akwritescode/eventalpha/commit/a198ab675df55775a5452649dd88599af15bdf72))
+* **ingestion:** record manually reviewed discovery leads ([126ac0b](https://github.com/akwritescode/eventalpha/commit/126ac0b503d5d86b866866da8284113f107d8af8))
+* **marketdata:** collect and archive partitioned minute candles ([159d7f2](https://github.com/akwritescode/eventalpha/commit/159d7f205df5baed9c01732d950ca8804d31ba3b))
+* **web:** explore recent stock moves in chat and window controls ([3a357ab](https://github.com/akwritescode/eventalpha/commit/3a357ab1e0fa13b23996fdd4da74b7b41b371864))
+
+
+### Bug fixes
+
+* **hooks:** preserve machine-local guard execution ([fad83fa](https://github.com/akwritescode/eventalpha/commit/fad83fa7d5a9467121abbb1d39f37504f30a2950))
+
 ## [0.1.1](https://github.com/akwritescode/eventalpha/compare/v0.1.0...v0.1.1) (2026-11-16)
 
 
