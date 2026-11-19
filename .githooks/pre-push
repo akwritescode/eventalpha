@@ -13,6 +13,6 @@ done <<EOT
 $input
 EOT
 [ $status -eq 0 ] || { echo "Push blocked: reword the commits above (git rebase -i) and push again." >&2; exit 1; }
-local_hook="$(git rev-parse --git-dir)/hooks/pre-push"
+local_hook="$(git rev-parse --git-common-dir)/hooks/pre-push"
 [ -x "$local_hook" ] && { printf '%s\n' "$input" | "$local_hook" "$@"; exit $?; }
 exit 0
