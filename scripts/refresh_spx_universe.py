@@ -1,19 +1,25 @@
 """Rebuild config/spx_universe.yaml: the top-N S&P 500 companies by market cap, with weights.
 
-    uv run python scripts/refresh_spx_universe.py            # top 50 (default)
-    uv run python scripts/refresh_spx_universe.py --top 25
+    uv run python scripts/refresh_spx_universe.py            # top 100 (default)
+    uv run python scripts/refresh_spx_universe.py --top 50
 
-Method (re-run quarterly, after the March/June/September/December index rebalances):
-  market cap = latest price (market data provider, e.g. Tradier quote)
-               × diluted weighted-average shares outstanding from the company's most recent
-                 10-Q/10-K XBRL facts (SEC companyfacts API, us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding)
-  weight     = market cap / sum of market caps of the selected companies, in percent
+Run after scripts/refresh_index_members.py, once per quarterly rebalance (March, June,
+September, December). Candidates are every S&P 500 member in config/index_members.json, one per
+company (share classes such as GOOGL/GOOG are grouped by SEC CIK).
+
+Method:
+  1. Rank all ~500 members by the market data provider's market cap (25 symbols per request).
+     This pass only picks candidates: the top N plus a margin, and any member it has no cap for.
+  2. For those candidates, compute the documented cap that sets the order and the weights:
+       market cap = latest price (market data provider, e.g. Tradier quote)
+                    × diluted weighted-average shares outstanding from the company's most recent
+                      10-Q/10-K XBRL facts (SEC companyfacts API)
+       weight     = market cap / sum of market caps of the selected companies, in percent
 
 This approximates S&P's float-adjusted index weights; it is not the official weighting (S&P
 publishes those under licence). Diluted share counts cover every share class, so multi-class
-companies (Alphabet, Meta) count once; Berkshire reports in Class A equivalents, so it's priced
-with BRK.A. CANDIDATES is a hand-kept superset of the largest US companies; the script ranks
-them on real data and keeps the top N.
+companies (Alphabet, Meta) count once. Companies that only tag per-class shares (Visa,
+Berkshire) fall back to the 10-K's public float scaled by the price change since then.
 """
 
 from __future__ import annotations
@@ -26,83 +32,25 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 
 from eventalpha.config import Settings
+from eventalpha.index_members import load_snapshot
 from eventalpha.marketdata import create_market_data
 from eventalpha.sec.client import RateLimitedClient
 from eventalpha.signals.universe import tradier_symbol
 
-# (SEC ticker(s), price ticker if different). First ticker is the company's primary one.
-CANDIDATES: list[tuple[list[str], str | None]] = [
-    (["NVDA"], None),
-    (["AAPL"], None),
-    (["MSFT"], None),
-    (["AMZN"], None),
-    (["GOOGL", "GOOG"], None),
-    (["META"], None),
-    (["AVGO"], None),
-    (["TSLA"], None),
-    (["BRK-B"], None),
-    (["JPM"], None),
-    (["LLY"], None),
-    (["V"], None),
-    (["WMT"], None),
-    (["ORCL"], None),
-    (["NFLX"], None),
-    (["XOM"], None),
-    (["MA"], None),
-    (["COST"], None),
-    (["JNJ"], None),
-    (["PLTR"], None),
-    (["HD"], None),
-    (["ABBV"], None),
-    (["BAC"], None),
-    (["AMD"], None),
-    (["PG"], None),
-    (["UNH"], None),
-    (["KO"], None),
-    (["CVX"], None),
-    (["CSCO"], None),
-    (["GE"], None),
-    (["WFC"], None),
-    (["CRM"], None),
-    (["IBM"], None),
-    (["PM"], None),
-    (["MS"], None),
-    (["ABT"], None),
-    (["GS"], None),
-    (["LIN"], None),
-    (["MCD"], None),
-    (["INTU"], None),
-    (["MU"], None),
-    (["AXP"], None),
-    (["NOW"], None),
-    (["T"], None),
-    (["TMO"], None),
-    (["MRK"], None),
-    (["DIS"], None),
-    (["ISRG"], None),
-    (["RTX"], None),
-    (["PEP"], None),
-    (["CAT"], None),
-    (["BX"], None),
-    (["QCOM"], None),
-    (["UBER"], None),
-    (["BKNG"], None),
-    (["VZ"], None),
-    (["AMAT"], None),
-    (["TXN"], None),
-    (["SCHW"], None),
-    (["BLK"], None),
-    (["C"], None),
-    (["SPGI"], None),
-    (["ANET"], None),
-    (["LRCX"], None),
-    (["NEE"], None),
-    (["PGR"], None),
-    (["APP"], None),
-    (["KLAC"], None),
-    (["ADBE"], None),
-    (["GEV"], None),
-]
+MARGIN = 30  # extra provider-ranked candidates, so a company the SEC method ranks higher isn't cut
+
+
+def group_by_company(symbols: list[str], universe: list[tuple[str, str, int | None]]) -> list[list[str]]:
+    """One ticker list per company: share classes share a CIK. The primary (first) ticker is
+    the one SEC ranks largest. `universe` rows are (ticker, cik, size_rank)."""
+    cik_of = {t: c for t, c, _ in universe}
+    rank = {t: r if r is not None else 10**9 for t, _, r in universe}
+    groups: dict[str, list[str]] = {}
+    for symbol in symbols:
+        groups.setdefault(cik_of.get(symbol, f"?{symbol}"), []).append(symbol)
+    return sorted((sorted(g, key=lambda t: (rank.get(t, 10**9), t)) for g in groups.values()), key=lambda g: g[0])
+
+
 FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:0>10}.json"
 SHARE_TAGS = ("WeightedAverageNumberOfDilutedSharesOutstanding", "WeightedAverageNumberOfSharesOutstandingBasic")
 STALE_BEFORE = "2025-01-01"  # older share counts are ignored (some filers stopped tagging them)
@@ -138,38 +86,52 @@ def market_cap(client: RateLimitedClient, md, cik: str, price_symbol: str, price
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--top", type=int, default=50)
+    parser.add_argument("--top", type=int, default=100)
+    parser.add_argument("--members", type=Path, default=Path("config/index_members.json"))
     parser.add_argument("--out", type=Path, default=Path("config/spx_universe.yaml"))
     args = parser.parse_args()
 
     s = Settings.from_env()
     engine = create_engine(s.database_url)
     with engine.connect() as conn:
-        cik_of = dict(conn.execute(text("SELECT ticker, cik FROM ticker_universe")).all())
+        universe = [tuple(r) for r in conn.execute(text("SELECT ticker, cik, size_rank FROM ticker_universe")).all()]
         names = dict(conn.execute(text("SELECT cik, name FROM ticker_universe")).all())
+    cik_of = {t: c for t, c, _ in universe}
+    companies = group_by_company(list(load_snapshot(args.members).members["sp500"]), universe)
+    unknown = [g[0] for g in companies if g[0] not in cik_of]
+    companies = [g for g in companies if g[0] in cik_of]
 
     md = create_market_data(s)
-    price_symbols = {c[1] or tradier_symbol(c[0][0]) for c in CANDIDATES}
-    prices = {q.symbol: float(q.last) for q in md.quotes(sorted(price_symbols)) if q.last}
+    # Pass 1: cheap provider ranking, only to choose who gets the SEC-based cap.
+    prelim = md.market_caps(sorted(tradier_symbol(g[0]) for g in companies))
+    ranked = sorted(
+        (g for g in companies if tradier_symbol(g[0]) in prelim), key=lambda g: -prelim[tradier_symbol(g[0])]
+    )
+    no_prelim = [g for g in companies if tradier_symbol(g[0]) not in prelim]
+    candidates = ranked[: args.top + MARGIN] + no_prelim
 
-    rows, skipped = [], []
+    # Pass 2: the documented cap (price x SEC diluted shares) sets the order and weights.
+    price_symbols = sorted({tradier_symbol(g[0]) for g in candidates})
+    prices = {q.symbol: float(q.last) for q in md.quotes(price_symbols) if q.last}
+    rows, skipped = [], list(unknown)
     with RateLimitedClient(s.sec_user_agent, s.sec_requests_per_second) as client:
-        for tickers, price_ticker in CANDIDATES:
-            cik = cik_of.get(tickers[0])
-            sym = price_ticker or tradier_symbol(tickers[0])
-            got = market_cap(client, md, cik, sym, prices[sym]) if cik and sym in prices else None
+        for tickers in candidates:
+            cik, sym = cik_of[tickers[0]], tradier_symbol(tickers[0])
+            got = market_cap(client, md, cik, sym, prices[sym]) if sym in prices else None
             if not got:
                 skipped.append(tickers[0])
                 continue
             cap, basis = got
-            name = names.get(cik, tickers[0])
-            rows.append({"tickers": tickers, "cik": cik, "name": name, "cap": cap, "basis": basis})
+            rows.append(
+                {"tickers": tickers, "cik": cik, "name": names.get(cik, tickers[0]), "cap": cap, "basis": basis}
+            )
 
     rows.sort(key=lambda r: -r["cap"])
     top = rows[: args.top]
     total = sum(r["cap"] for r in top)
     lines = [
-        "# Top S&P 500 companies by market cap, used by the SPX overnight signal.",
+        "# Top S&P 500 companies by market cap, used by the SPX overnight signal (candidates: every",
+        "# S&P 500 member in config/index_members.json, share classes grouped by company).",
         f"# Generated {date.today().isoformat()} by scripts/refresh_spx_universe.py (re-run quarterly).",
         "#",
         "# weight = this company's market cap as a % of the listed companies' combined cap, where",
@@ -194,7 +156,10 @@ def main() -> int:
     existing = args.out.read_text()
     context = existing[existing.index("# Market context") :] if "# Market context" in existing else ""
     args.out.write_text("\n".join(lines) + "\n\n" + context)
-    print(f"wrote {args.out}: top {len(top)} of {len(rows)} priced candidates; skipped {skipped or 'none'}")
+    print(
+        f"wrote {args.out}: top {len(top)} of {len(rows)} priced candidates "
+        f"({len(companies)} S&P 500 companies ranked); skipped {skipped or 'none'}"
+    )
     for r in top[:10]:
         print(f"  {r['tickers'][0]:6} ${r['cap'] / 1e9:>8,.0f}B  {100 * r['cap'] / total:5.2f}%")
     return 0

@@ -2,7 +2,7 @@
 ### Trading-day signals → Telegram
 
 * **signal_spx_overnight:** 15 min before the SPX session ends (16:45 ET, or 13:45 on 13:00
-  early-close days). Market-wide read for the overnight SPX session: top-50 news weighted by
+  early-close days). Market-wide read for the overnight SPX session: top-100 news weighted by
   index weight, breadth of company news, next session's macro calendar and earnings, close.
 * **signal_premarket:** 09:15 ET. Ticker-specific: companies with material news since the last
   close, insider buying, today's earnings and macro releases (with CPI surprise vs the Cleveland
