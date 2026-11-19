@@ -1,9 +1,11 @@
 import React from 'react';
-import { Box, Container, Link, Typography } from '@mui/material';
+import { Box, Container, Link, Stack, Typography } from '@mui/material';
 import { Calendar, InsiderBuy, Nowcast, SentimentDay } from './api';
 import { usePolling } from './hooks/usePolling';
 import { useEventStream } from './hooks/useEventStream';
 import { useNotifications } from './hooks/useNotifications';
+import { MoveChat } from './components/MoveChat';
+import { MoveExplanation } from './components/MoveExplanation';
 import { TopBar } from './components/TopBar';
 import { Stream } from './components/Stream';
 import { SentimentChart } from './components/SentimentChart';
@@ -25,7 +27,11 @@ const App: React.FC = () => {
       <TopBar notify={notifications} />
       <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 4 } }}>
         <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 340px' }, alignItems: 'start' }}>
-          <Stream live={stream.connected} pushVersion={stream.version} />
+          <Stack spacing={3}>
+            <MoveChat />
+            <MoveExplanation />
+            <Stream live={stream.connected} pushVersion={stream.version} />
+          </Stack>
           <Box sx={{ display: 'grid', gap: 2, position: { lg: 'sticky' }, top: { lg: 84 } }}>
             <SentimentChart days={sentiment.data?.data} asOf={sentiment.data?.dataAsOf} />
             <CalendarPanel calendar={calendar.data?.data} asOf={calendar.data?.dataAsOf} />
@@ -35,8 +41,7 @@ const App: React.FC = () => {
         </Box>
         <Typography sx={{ mt: 4, fontSize: '0.78rem', color: T.fgMuted, maxWidth: 760 }}>
           Sources: SEC EDGAR; syndicated press-release and Federal Reserve RSS feeds; U.S. Bureau of Labor Statistics;
-          FRED, Federal Reserve Bank of St. Louis; Federal Reserve Bank of Cleveland inflation nowcasts; Tradier market
-          data. Classifications are model output. Research signals, not investment advice.{' '}
+          FRED, Federal Reserve Bank of St. Louis; Federal Reserve Bank of Cleveland inflation nowcasts. Classifications are model output. Research signals, not investment advice.{' '}
           <Link href="https://github.com/akwritescode/eventalpha" target="_blank" rel="noopener noreferrer" color="inherit">Source code</Link>
         </Typography>
       </Container>
