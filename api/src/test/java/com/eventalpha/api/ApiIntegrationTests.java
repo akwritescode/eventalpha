@@ -407,6 +407,21 @@ class ApiIntegrationTests {
     }
 
     @Test
+    @org.springframework.transaction.annotation.Transactional
+    void calendarTodayIsTheNewYorkTradingDateNotTheUtcDate() throws Exception {
+        // After 19:00 ET the UTC date is already tomorrow; today's after-close reporters must stay.
+        jdbc.sql("""
+                INSERT INTO earnings_events (ticker, event_date, description, status, fiscal_year, market_cap, source)
+                VALUES ('NYTODAY', (now() AT TIME ZONE 'America/New_York')::date, 'Earnings Result', 'Confirmed',
+                        2027, 9.9e12, 'tradier'),
+                       ('NYPAST', (now() AT TIME ZONE 'America/New_York')::date - 1, 'Earnings Result', 'Confirmed',
+                        2027, 9.8e12, 'tradier')""").update();
+        mvc.perform(get("/api/v1/calendar/upcoming")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.earnings[0].ticker").value("NYTODAY"))
+                .andExpect(jsonPath("$.data.earnings[?(@.ticker == 'NYPAST')]", hasSize(0)));
+    }
+
+    @Test
     void latestSignalPerTypeWithPayload() throws Exception {
         mvc.perform(get("/api/v1/signals/latest"))
                 .andExpect(status().isOk())

@@ -3,8 +3,8 @@
 
 * **Economic:** BLS release calendar (exact ET times), FRED release dates for the non-BLS releases
   that matter (GDP, PCE, retail sales, claims, ...), and FOMC decisions from the Fed's calendar.
-* **Earnings:** the market data provider's corporate calendar for the SPX top-50 plus every
-  ticker that's been in the news in the last 30 days.
+* **Earnings:** the market data provider's corporate calendar for every S&P 500, Nasdaq-100 and
+  Dow 30 member (config/index_members.json) plus every ticker in the news in the last 30 days.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from airflow.sdk import dag, task
-from eventalpha_common import DEFAULT_ARGS, NY, START_DATE, engine, market_data, settings, table_asset, universe
+from eventalpha_common import DEFAULT_ARGS, NY, START_DATE, engine, index_members, market_data, settings, table_asset
 
 LOOKAHEAD_DAYS = 45
 LOOKBACK_DAYS = 30  # keep recent releases too: the web stream shows them with their actual values
@@ -68,7 +68,9 @@ def calendars_daily():
                 .scalars()
                 .all()
             )
-        tickers = sorted({t for c in universe().companies for t in c.tickers} | set(news))
+        # Every S&P 500, Nasdaq-100 and Dow 30 member, plus any company in the last month's news
+        # (smaller names that made a filing or headline). Market cap only orders the result.
+        tickers = sorted(set(index_members().all_symbols()) | set(news))
         provider = market_data()
         events = provider.earnings_events(
             [tradier_symbol(t) for t in tickers], today, today + timedelta(days=LOOKAHEAD_DAYS)
