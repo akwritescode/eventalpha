@@ -145,3 +145,6 @@ while True:
                 print(event["data"]["tickers"], event["data"]["title"])
                 event = {}
 ```
+
+The UI demo and SQL seed share `web/src/fixtures/move-demo.json`. Regenerate the seed with
+`python scripts/render_move_demo.py`; use `--check` to verify it without writing.

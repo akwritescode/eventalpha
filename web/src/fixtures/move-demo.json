@@ -1,0 +1,38 @@
+{
+  "ticker": "NVDA",
+  "start": "2025-04-15T17:20:00-04:00",
+  "end": "2025-04-15T17:35:00-04:00",
+  "article": {
+    "source": "sec_edgar",
+    "source_id": "demo-move-0001045810-25-000082",
+    "form_type": "8-K",
+    "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581025000082/nvda-20250409.htm",
+    "title": "NVIDIA 8-K on H20 export licensing and expected charges",
+    "published_at": "2025-04-15T17:22:59-04:00",
+    "ingested_at": "2025-04-15T17:26:00-04:00",
+    "content_hash": "demo-move"
+  },
+  "leads": [
+    {
+      "post_id": "99000000000000000001",
+      "paraphrase": "NVIDIA disclosed new H20 export licensing requirements and expected charges of up to about $5.5 billion.",
+      "published_at": "2025-04-15T17:23:00-04:00",
+      "first_seen_at": "2025-04-15T17:25:00-04:00",
+      "verified_at": "2025-04-15T17:27:00-04:00"
+    },
+    {
+      "post_id": "99000000000000000002",
+      "paraphrase": "A second post flagged the H20 export license requirement disclosed in the 8-K.",
+      "published_at": "2025-04-15T17:29:00-04:00",
+      "first_seen_at": "2025-04-15T17:37:00-04:00",
+      "verified_at": "2025-04-15T17:38:00-04:00"
+    },
+    {
+      "post_id": "99000000000000000003",
+      "paraphrase": "A later post speculated about cancellations of H20 orders.",
+      "published_at": "2025-04-15T17:40:00-04:00",
+      "first_seen_at": "2025-04-15T17:41:00-04:00",
+      "verified_at": null
+    }
+  ]
+}
