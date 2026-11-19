@@ -15,7 +15,7 @@ import os
 
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import dag, task
-from eventalpha_common import DEFAULT_ARGS, START_DATE, settings
+from eventalpha_common import DEFAULT_ARGS, START_DATE, engine, settings
 
 RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "30"))
 LOG_RETENTION_DAYS = 30
@@ -84,6 +84,24 @@ def maintenance():
             s3.delete_objects(Bucket=bucket, Delete={"Objects": stale[i : i + 1000]})
         return f"s3://{bucket}/{key} ({size / 1e6:.1f} MB), pruned {len(stale)}"
 
+    @task
+    def archive_minute_candles() -> dict:
+        from datetime import UTC, datetime, timedelta
+
+        import boto3
+
+        from eventalpha.marketdata.storage import PREFIX, ensure_partitions, offload_minutes
+
+        bucket = os.environ.get("MINUTE_ARCHIVE_BUCKET", "").strip() or settings().raw_bucket
+        if not bucket:
+            return {"status": "skipped", "reason": "MINUTE_ARCHIVE_BUCKET / RAW_BUCKET not configured"}
+        db = engine()
+        now = datetime.now(UTC)
+        ensure_partitions(db, now.date(), now.date() + timedelta(days=7))
+        return offload_minutes(
+            db, boto3.client("s3"), bucket, now, prefix=os.environ.get("MINUTE_ARCHIVE_PREFIX", PREFIX)
+        )
+
     clean_metadata = BashOperator(
         task_id="clean_airflow_metadata",
         # Airflow 3 blanks the metadata-DB URL inside tasks; hand the CLI the real one.
@@ -118,6 +136,7 @@ def maintenance():
             )
         return round(pct, 1)
 
+    archive_minute_candles()
     backup_warehouse() >> clean_metadata >> prune_logs >> check_disk()
 
 

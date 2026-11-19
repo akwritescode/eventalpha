@@ -264,6 +264,28 @@ market_sessions = Table(
     Column("fetched_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
+minute_universe_members = Table(
+    "minute_universe_members",
+    metadata,
+    Column("index_name", String(16), primary_key=True),
+    Column("symbol", String(16), primary_key=True),
+    Column("fetched_at", DateTime(timezone=True), nullable=False),
+)
+
+price_bars_minute = Table(
+    "price_bars_minute",
+    metadata,
+    Column("symbol", String(16), primary_key=True),
+    Column("started_at", DateTime(timezone=True), primary_key=True),
+    Column("open", Numeric, nullable=False),
+    Column("close", Numeric, nullable=False),
+    Column("high", Numeric),
+    Column("low", Numeric),
+    Column("volume", BigInteger),
+    Column("first_seen_at", DateTime(timezone=True), nullable=False, server_default=func.statement_timestamp()),
+    postgresql_partition_by="RANGE (started_at)",
+)
+
 price_bars_daily = Table(
     "price_bars_daily",
     metadata,

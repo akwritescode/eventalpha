@@ -6,7 +6,7 @@ Pipeline code depends only on this module; vendor APIs live in providers/.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, time
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Protocol
 
@@ -36,6 +36,17 @@ class DailyBar:
     low: Decimal
     close: Decimal
     volume: int | None  # None for indexes (SPX, VIX), which have no volume of their own
+
+
+@dataclass(frozen=True)
+class MinuteBar:
+    symbol: str
+    started_at: datetime
+    open: Decimal
+    close: Decimal
+    high: Decimal | None = None
+    low: Decimal | None = None
+    volume: int | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +81,8 @@ class MarketDataProvider(Protocol):
     def quotes(self, symbols: list[str]) -> list[Quote]: ...
 
     def daily_bars(self, symbol: str, start: date, end: date) -> list[DailyBar]: ...
+
+    def minute_bars(self, symbol: str, start: datetime, end: datetime) -> list[MinuteBar]: ...
 
     def session_calendar(self, year: int, month: int) -> list[SessionDay]: ...
 

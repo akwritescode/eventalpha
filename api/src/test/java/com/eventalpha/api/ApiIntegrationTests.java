@@ -41,7 +41,9 @@ import org.springframework.test.web.servlet.MockMvc;
         properties = {"spring.datasource.hikari.read-only=false", // tests must load fixtures
                 "eventalpha.cors.allowed-origins=http://localhost:3000, https://eventalpha-*.vercel.app"})
 @AutoConfigureMockMvc
-@Sql(scripts = {"/db/schema.sql", "/db/seed.sql"}, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
+@Sql(scripts = {"/db/schema.sql", "/db/seed.sql"}, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS,
+        config = @org.springframework.test.context.jdbc.SqlConfig(
+                separator = org.springframework.jdbc.datasource.init.ScriptUtils.EOF_STATEMENT_SEPARATOR))
 class ApiIntegrationTests {
 
     @Autowired
