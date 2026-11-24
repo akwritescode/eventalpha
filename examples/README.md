@@ -26,29 +26,34 @@ COMMIT;
 
 ## Move explanation
 
-The **Ask EventAlpha** panel resolves tickers and company names from the ticker universe for questions such as “Why did NVDA move in the last
-30 minutes?” and “What was available by the end?” The follow-up reuses the preceding window. “Today” uses the New York regular session from the
-exchange calendar, ending at the current minute or the session close. Closed days and mornings
-before the open receive a clear message. “Since yesterday” starts at the previous trading session’s close, skipping closed calendar days.
-“Since yesterday’s open” uses that session’s open. These windows may span weekends, up to seven days.
-Only the latest question and response are displayed.
-Minute-bar collection covers the combined Nasdaq-100 and S&P 500 membership plus benchmarks.
-This first chat uses a deterministic phrase parser, with no language-model dependency.
-Use the date pickers for explicit windows within the past seven days. Picker times use the
-browser's displayed time zone, and requests carry UTC timestamps.
+The **Ask EventAlpha** panel takes a question such as “Why did NVDA move in the last 30 minutes?”
+or just a ticker. `POST /api/v1/move-query` turns the question into a ticker and a window:
+Claude (`EVENTALPHA_ASK_MODEL`, default `claude-haiku-5-5`) fills a fixed JSON schema through
+structured outputs, and the API checks the ticker against `ticker_universe` and the window against
+the seven-day, 24-hour limits before the browser calls `move-explanation`. A bare ticker skips the
+model and offers time-frame chips: the last 30 minutes, hour or two hours, today, since
+yesterday's close, or a custom range. Follow-ups such as “What was known by then?” reuse the window
+on screen and replay it as of its end.
 
-Ticker autocomplete queries `GET /api/v1/tickers/search?q=NVIDIA` against `ticker_universe`.
-It supports symbol prefixes and company-name matches.
+“Today” uses the New York regular session from the exchange calendar, ending at the current minute
+or the session close. Closed days and mornings before the open receive a clear message. “Since
+yesterday” starts at the previous trading session’s close, skipping closed calendar days, so these
+windows may span weekends, up to seven days. Minute-bar collection covers the combined Nasdaq-100
+and S&P 500 membership plus benchmarks. Custom-range pickers use the browser's time zone, and
+requests carry UTC timestamps.
 
+Without `ANTHROPIC_API_KEY` the endpoint answers free text with 503 and the chat asks for a ticker
+instead. Questions that reach the model are limited to `EVENTALPHA_ASK_RATE_LIMIT_PER_MINUTE`
+(default 10) per IP, on top of the API's global limit.
 
 After `make seed`, start the web app with `cd web && REACT_APP_API_URL=http://localhost:8081 npm start`.
-Select **Load NVDA demo** under **Explain a stock move**. The demo uses NVIDIA's
+Select **See the NVDA demo** in **Ask EventAlpha**. The demo uses NVIDIA's
 [April 15, 2025 8-K](https://www.sec.gov/Archives/edgar/data/1045810/000104581025000082/nvda-20250409.htm)
 with its actual EDGAR acceptance time. The X post IDs and EventAlpha observation and review times
 are simulated. The X links in this fixture are placeholders. The selected window is illustrative. User-entered windows in the web app must fall within the past
 seven days. The demo button opens the historical fixture, and the read API can replay stored evidence.
 
-Use **Replay as of window end** and submit again to see what the fixture makes available by
+Then ask “What was known by then?” to see what the fixture makes available by
 5:35 p.m. ET. The 5:29 p.m. discovery was first seen at 5:37 p.m. and the unverified 5:40 p.m.
 lead was published after the window. Both appear in the retrospective timeline.
 

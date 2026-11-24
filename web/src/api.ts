@@ -92,6 +92,26 @@ export async function getJson<T>(path: string): Promise<ApiResponse<T>> {
   return resp.json();
 }
 
+/** A failed request, with the server's problem detail (RFC 9457) when it sent one. */
+export class ApiError extends Error {
+  constructor(public status: number, public detail?: string) {
+    super(detail || `HTTP ${status}`);
+  }
+}
+
+export async function postJson<T>(path: string, body: unknown): Promise<ApiResponse<T>> {
+  const resp = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const problem = await resp.json().catch(() => undefined);
+    throw new ApiError(resp.status, typeof problem?.detail === 'string' ? problem.detail : undefined);
+  }
+  return resp.json();
+}
+
 /** One new item on the feed stream (Server-Sent Events, all fields are strings). */
 export interface FeedPush {
   id: string; // stream entry id (used for resume)

@@ -5,7 +5,6 @@ import { usePolling } from './hooks/usePolling';
 import { useEventStream } from './hooks/useEventStream';
 import { useNotifications } from './hooks/useNotifications';
 import { MoveChat } from './components/MoveChat';
-import { MoveExplanation } from './components/MoveExplanation';
 import { TopBar } from './components/TopBar';
 import { Stream } from './components/Stream';
 import { SentimentChart } from './components/SentimentChart';
@@ -29,7 +28,6 @@ const App: React.FC = () => {
         <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 340px' }, alignItems: 'start' }}>
           <Stack spacing={3}>
             <MoveChat />
-            <MoveExplanation />
             <Stream live={stream.connected} pushVersion={stream.version} />
           </Stack>
           <Box sx={{ display: 'grid', gap: 2, position: { lg: 'sticky' }, top: { lg: 84 } }}>
