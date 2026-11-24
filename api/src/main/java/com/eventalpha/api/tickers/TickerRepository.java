@@ -8,8 +8,9 @@ import java.util.List;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+/** Public so the move question endpoint can resolve company names against the same universe. */
 @Repository
-class TickerRepository {
+public class TickerRepository {
 
     private final JdbcClient jdbc;
 
@@ -17,9 +18,10 @@ class TickerRepository {
         this.jdbc = jdbc;
     }
 
-    record TickerMatch(String ticker, String name, Instant updatedAt) {}
+    public record TickerMatch(String ticker, String name, Instant updatedAt) {}
 
-    List<TickerMatch> search(String query) {
+    /** Up to 10 matches for an upper-cased query, exact symbol first. */
+    public List<TickerMatch> search(String query) {
         return jdbc.sql("""
                 SELECT ticker, name, updated_at
                 FROM ticker_universe

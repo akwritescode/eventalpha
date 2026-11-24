@@ -164,7 +164,7 @@ calendar, the Cleveland Fed's inflation nowcasts, and the Tradier brokerage API.
 
 ## API
 
-A public, read-only HTTP API (no key; rate limited per IP). Every response is
+A public, read-only HTTP API (no key; rate limited per IP; `move-query` is the one POST). Every response is
 `{"data": ..., "dataAsOf": "<timestamp>"}` so clients can show how fresh the data is.
 
 | Endpoint | Returns |
@@ -174,6 +174,7 @@ A public, read-only HTTP API (no key; rate limited per IP). Every response is
 | `GET /api/v1/articles?ticker=AAON&formType=8-K&days=7` | Filings and news with their latest classification |
 | `GET /api/v1/events?type=guidance_lowered&minProb=0.8` | Items the classifier flags with an event type |
 | `GET /api/v1/tickers/{ticker}/move-explanation?start=…&end=…&asOf=…` | Evidence around a specific move window and an optional replay cutoff. [Try the NVDA fixture](examples/README.md#move-explanation). |
+| `POST /api/v1/move-query` `{"question": "Why did NVDA drop today?"}` | The ticker and move window a chat question refers to, ready for `move-explanation`. Uses Claude when `ANTHROPIC_API_KEY` is set; bare tickers work without it |
 | `GET /api/v1/tickers/{ticker}/sentiment?days=30` | Daily sentiment for one ticker |
 | `GET /api/v1/tickers/{ticker}/insider-trades?days=90` | Form 4 transactions and net open-market value |
 | `GET /api/v1/signals/latest` | The latest premarket and SPX overnight signals with their inputs |
@@ -201,7 +202,8 @@ make setup                    # git hooks, Python and web dependencies, .env fro
 Edit `.env`. Only `SEC_USER_AGENT` is required to start (SEC asks for a name and a real
 contact email, e.g. `"eventalpha you@example.com"`). The API keys enable more sources:
 without `TYPESAFE_API_KEY` nothing is classified, without `TRADIER_BROKER_KEY`/`FRED_API_KEY`
-there are no prices or FRED series. `FERNET_KEY` may stay empty locally (Airflow then stores
+there are no prices or FRED series, and without `ANTHROPIC_API_KEY` the web chat
+accepts tickers but not free-text questions. `FERNET_KEY` may stay empty locally (Airflow then stores
 connection passwords unencrypted and logs a warning); production requires one.
 
 ```bash

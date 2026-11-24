@@ -9,7 +9,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Browser access from the web UI, which is served from another origin: Vercel in production
  * (the browser calls this API directly, including the SSE stream), the React dev server locally.
  * Entries are origin patterns, so `https://eventalpha-*.vercel.app` admits Vercel preview builds.
- * Read-only API, no cookies: GET only, no credentials.
+ * Read-only API, no cookies, no credentials: GET only, plus POST for the chat question endpoint
+ * (it reads too, but takes a JSON body). The specific mapping must come first: first match wins.
  */
 @Configuration
 class CorsConfig implements WebMvcConfigurer {
@@ -22,6 +23,8 @@ class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/v1/move-query").allowedOriginPatterns(origins).allowedMethods("POST")
+                .allowedHeaders("Content-Type").maxAge(3600);
         registry.addMapping("/api/**").allowedOriginPatterns(origins).allowedMethods("GET").maxAge(3600);
     }
 }
