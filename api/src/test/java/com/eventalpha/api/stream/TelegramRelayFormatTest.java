@@ -21,6 +21,16 @@ class TelegramRelayFormatTest {
     }
 
     @Test
+    void skipsLegacyAndTickerlessEvents() {
+        assertThat(TelegramRelay.eligibleForDelivery(Map.of("tickers", "NVDA"))).isFalse();
+        assertThat(TelegramRelay.eligibleForDelivery(Map.of("index_filtered", "1"))).isFalse();
+        assertThat(TelegramRelay.eligibleForDelivery(Map.of("index_filtered", "1", "tickers", "NVDA"))).isTrue();
+        assertThat(TelegramRelay.format(Map.of("title", "Historical event")))
+                .startsWith("⚪\nHistorical event")
+                .doesNotContain("&mdash;");
+    }
+
+    @Test
     void busyGroupIsFoundInTheCauseChain() {
         var wrapped = new org.springframework.data.redis.RedisSystemException("Error in execution",
                 new RuntimeException("BUSYGROUP Consumer Group name already exists"));

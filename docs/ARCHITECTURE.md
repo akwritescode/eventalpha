@@ -47,9 +47,9 @@ Two kinds of data come out of SEC filings:
 4. **Classification:** `classify_articles` runs whenever the `articles` asset updates. It picks
    articles with no score for the configured `<provider>:<model>` and question set, classifies them in
    concurrent batches, then runs SQL quality checks.
-5. **Live events:** after scores commit, articles rated material (≥ 2.5 of 3) and
-   company-specific (≥ 0.8) are appended to the Redis Stream `eventalpha:events`, once per
-   article (atomic Lua: dedupe mark + XADD).
+5. **Live events:** articles qualify if they score at least 2.5 of 3 for materiality and 0.8 for
+   company specificity, and name an S&P 500 or Nasdaq-100 ticker. After the scores commit, a Lua
+   script appends each qualifying article once to the Redis Stream `eventalpha:events`.
 6. **Serving:** the Spring Boot API reads the warehouse over a read-only connection and returns
    JSON with a `dataAsOf` freshness timestamp.
 7. **Housekeeping, nightly:** warehouse backup, Airflow metadata cleanup, log pruning, disk check.
@@ -104,7 +104,7 @@ Changing either one re-classifies history into new rows, and nothing is overwrit
 |---|---|
 | Producer | `classify_articles` → `eventalpha.event_stream.publish_alerts`: Lua script does `SET alerted:<id> NX EX 30d` and `XADD … MAXLEN ~ 10000` as one step, so a retried task never duplicates and a crash can't lose an event between the two |
 | SSE consumer | `GET /api/v1/stream/events`: one virtual thread per client polls `XREAD` after the last ID it sent; browsers resend `Last-Event-ID` on reconnect and get exactly what they missed. Keepalive comment every 15 s; client cap (100) |
-| Telegram consumer | Consumer group `telegram` (`XREADGROUP`, `XACK`). Entries that fail to send stay pending and are retried first, including after a restart. Enabled only when `TELEGRAM_BOT_TOKEN` is set |
+| Telegram consumer | Consumer group `telegram` (`XREADGROUP`, `XACK`). Entries queued before index filtering was introduced are acknowledged without delivery. Entries that fail to send stay pending and are retried first, including after a restart. Enabled only when `TELEGRAM_BOT_TOKEN` is set |
 | Redis config | AOF persistence (`appendonly yes`), `maxmemory 200mb`, `noeviction` (losing stream entries or dedupe keys silently would be worse than a write error) |
 
 Why a stream and not Postgres `LISTEN/NOTIFY`: notifications are fire-and-forget, so a
