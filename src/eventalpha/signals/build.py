@@ -178,6 +178,7 @@ def build_spx_overnight(
         "inflation_nowcast": inputs.latest_nowcast(engine),
         "market_close": _market_moves(inputs.snapshot(engine, session_date, "close"), universe.context_symbols),
         "universe_as_of": universe.as_of,
+        "universe_size": len(universe.companies),
     }
     return Signal("spx_overnight", session_date, now, score, confidence, _json(payload), inputs.freshness(engine))
 
