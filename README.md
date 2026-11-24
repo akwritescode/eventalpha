@@ -65,12 +65,31 @@ Documentation:
 Every processed SEC filing also gets a row in the `sec_filings` ledger (loaded / skipped /
 failed, plus the reason), so coverage per day can be queried.
 
+## Index membership
+
+`config/index_members.json` lists every member of the **S&P 500, Nasdaq-100 and Dow Jones
+Industrial Average** (the indexes overlap; about 518 distinct symbols). It is the coverage list
+for the earnings calendar and minute candles, and it's mirrored into the `index_members` table
+for SQL joins. The pipeline never fetches membership itself.
+
+Refresh it after each quarterly rebalance (effective after the third Friday of March, June,
+September and December), then re-rank the SPX signal universe from it:
+
+```bash
+WIKIMEDIA_USER_AGENT="EventAlpha index refresh (you@example.com)" \
+  uv run python scripts/refresh_index_members.py   # prints members added/removed per index
+uv run python scripts/refresh_spx_universe.py      # top 100 by market cap → config/spx_universe.yaml
+```
+
+Both scripts write files for review in a pull request; each index records the exact Wikipedia
+revision it came from. The pipeline watchdog sends a weekly reminder once either file is more
+than 100 days old.
+
 ## Minute candles and retention
 
-`market_move_bars` uses the reviewed `config/candle_universe.json` snapshot of Nasdaq-100
-and S&P 500 membership, plus SPY, QQQ and SMH (521 symbols). It makes no requests to
-constituent publishers. Membership changes require a reviewed snapshot update. The existing
-top-50 SPX signal universe remains independent.
+`market_move_bars` covers every member of the S&P 500, Nasdaq-100 and Dow Jones Industrial
+Average from the reviewed `config/index_members.json` snapshot, plus SPY, QQQ, DIA and SMH
+(522 symbols). See [Index membership](#index-membership).
 
 Collection uses two workers with 25 symbols per batch and at least 1.5 seconds between symbol
 requests per worker. New members receive eight calendar days of history. Subsequent requests
@@ -103,7 +122,7 @@ inputs, and print how fresh each input was. They're research signals, not advice
 | Time (ET) | Signal | Contents |
 |---|---|---|
 | 09:15 | Premarket | Companies with material news since the last close (ranked by materiality × sentiment strength), insider open-market buying (clusters), today's earnings and macro releases, CPI surprise vs the Cleveland Fed nowcast on CPI days, premarket moves |
-| 16:45 (13:45 on early closes) | SPX overnight | Top-50 S&P 500 news weighted by market-cap weight, breadth of company news, next session's macro calendar and earnings, closing moves in SPX, VIX, rates, credit, oil, dollar |
+| 16:45 (13:45 on early closes) | SPX overnight | Top-100 S&P 500 news weighted by market-cap weight, breadth of company news, next session's macro calendar and earnings, closing moves in SPX, VIX, rates, credit, oil, dollar |
 
 The day around them: 00:15 session calendar · 00:30 tickers · 01:00 SEC daily runs (Form 4,
 13F, 10-K/Q, 8-K reconciliation) · 06:00 calendars · every 15 min 06:00-20:00 intraday SEC filings
@@ -371,9 +390,10 @@ Economic data: U.S. Bureau of Labor Statistics; FRED, Federal Reserve Bank of St
   delisted (survivorship bias).
 * 13F holdings are keyed by CUSIP; SEC doesn't publish a CUSIP→ticker map.
 * 10-K/10-Q section extraction relies on item headings and misses unusual layouts.
-* The SPX top-50 list (`config/spx_universe.yaml`) is regenerated quarterly with
-  `scripts/refresh_spx_universe.py`; its weights approximate S&P's float-adjusted weights
-  (price × SEC share counts) and aren't the official licensed weights.
+* The SPX top-100 list (`config/spx_universe.yaml`) approximates S&P's float-adjusted weights
+  (price × SEC share counts); they aren't the official licensed weights.
+* Index membership comes from Wikipedia's constituent tables and changes only when the snapshot
+  is refreshed, so a member added mid-quarter is missed until the next refresh.
 * The earnings calendar gives dates, not before-open/after-close timing.
 * Tradier's session calendar only covers the current year, so next January loads once the year turns.
 * No free official source publishes consensus forecasts; CPI surprise is measured against the

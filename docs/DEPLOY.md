@@ -85,6 +85,13 @@ Migrations run on every deploy (`warehouse-migrate` before the scheduler and API
 Keep them backward-compatible (add before you remove) so a rollback never meets a schema it
 doesn't understand.
 
+The index-membership release renames `minute_universe_members` to `index_members` in
+revision `d2f4a6b8c0e1`. Stop the existing scheduler before deploying this release so its
+candle collector cannot access the old table during the migration. If rolling back across
+this release, stop the scheduler and run
+`docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint bash warehouse-migrate -c 'cd /opt/airflow/project && alembic downgrade b6a729ce18f0'`
+with the index-membership release still selected, then deploy the earlier image.
+
 ## Restore a backup
 
 ```bash

@@ -112,12 +112,14 @@ class DashboardController {
 
     record Calendar(List<EconEvent> economic, List<EarningsEvent> earnings) {}
 
+    // Event dates are New York calendar dates. The database runs in UTC, so `current_date` would
+    // roll over at 19:00/20:00 ET and drop today's after-close earnings while they're reporting.
     @Operation(summary = "Upcoming economic releases (BLS, FRED, FOMC) and earnings dates")
     @GetMapping("/calendar/upcoming")
     ApiResponse<Calendar> upcoming(@RequestParam(defaultValue = "14") @Min(1) @Max(60) int days) {
         var econ = jdbc.sql("""
                         SELECT event_date, scheduled_at, title, importance, source FROM econ_events
-                        WHERE event_date BETWEEN current_date AND current_date + :days
+                        WHERE event_date BETWEEN (now() AT TIME ZONE 'America/New_York')::date AND (now() AT TIME ZONE 'America/New_York')::date + :days
                         ORDER BY event_date, scheduled_at NULLS LAST, importance, title""")
                 .param("days", days)
                 .query((rs, i) -> new EconEvent(rs.getObject("event_date", LocalDate.class),
@@ -127,7 +129,7 @@ class DashboardController {
                 .list();
         var earnings = jdbc.sql("""
                         SELECT ticker, event_date, status, market_cap FROM earnings_events
-                        WHERE event_date BETWEEN current_date AND current_date + :days
+                        WHERE event_date BETWEEN (now() AT TIME ZONE 'America/New_York')::date AND (now() AT TIME ZONE 'America/New_York')::date + :days
                         ORDER BY event_date, market_cap DESC NULLS LAST, ticker""")  // largest company first
                 .param("days", days)
                 .query(EarningsEvent.class)

@@ -13,10 +13,12 @@ they saw, so an offline consumer catches up instead of missing items (unlike LIS
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Set
 from typing import Any
 
 import redis
+
+from eventalpha.signals.universe import sec_ticker
 
 STREAM = "eventalpha:events"
 STREAM_MAXLEN = 10_000  # approximate cap; older entries are trimmed
@@ -68,7 +70,11 @@ def to_fields(article: Mapping[str, Any], score: Mapping[str, Any]) -> dict[str,
 
 
 def publish_alerts(
-    client: redis.Redis, articles: Sequence[Mapping[str, Any]], scores: Sequence[Mapping[str, Any]]
+    client: redis.Redis,
+    articles: Sequence[Mapping[str, Any]],
+    scores: Sequence[Mapping[str, Any]],
+    *,
+    eligible_symbols: Set[str],
 ) -> int:
     """Append qualifying articles to the high-impact stream; returns how many were newly published."""
     by_id = {a["id"]: a for a in articles}
@@ -77,7 +83,12 @@ def publish_alerts(
         article = by_id.get(score["article_id"])
         if article is None or not is_alert(score):
             continue
-        fields = to_fields(article, score)
+        tickers = dict.fromkeys(sec_ticker(ticker.strip().upper()) for ticker in article.get("tickers") or ())
+        eligible_tickers = [ticker for ticker in tickers if ticker in eligible_symbols]
+        if not eligible_tickers:
+            continue
+        fields = to_fields(dict(article) | {"tickers": eligible_tickers}, score)
+        fields["index_filtered"] = "1"
         if _publish_once(client, f"eventalpha:alerted:{article['id']}", STREAM, STREAM_MAXLEN, fields):
             published += 1
     return published

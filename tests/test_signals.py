@@ -59,7 +59,7 @@ def test_weighted_mean_clip_and_json_helpers():
 
 def test_overnight_blends_megacap_and_breadth_news(warehouse):
     warehouse["articles"] = [
-        scored(1, "1045810", ["NVDA"], 0.8, 3.0),  # top-50 company
+        scored(1, "1045810", ["NVDA"], 0.8, 3.0),  # top-100 company
         scored(2, None, ["SMOL"], -0.4, 1.5),  # breadth only
         scored(3, None, ["NOISE"], 0.9, 3.0, specific=0.2),  # not company-specific: ignored
     ]
@@ -68,6 +68,7 @@ def test_overnight_blends_megacap_and_breadth_news(warehouse):
     breadth = (0.8 * 1.0 + -0.4 * 0.5) / 1.5  # materiality/3 weights
     assert sig.score == pytest.approx(0.6 * mega + 0.4 * breadth)
     assert sig.payload["counts"] == {"articles_scored": 3, "company_specific": 2, "megacap_articles": 1, "unscored": 0}
+    assert sig.payload["universe_size"] == len(UNIVERSE.companies)
     # Confidence = coverage × (0.4 × breadth coverage + 0.6 × megacap coverage).
     assert sig.confidence == round(1.0 * (0.4 * 2 / 40 + 0.6 * 1 / 5), 2)
 

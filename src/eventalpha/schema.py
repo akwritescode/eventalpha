@@ -264,8 +264,9 @@ market_sessions = Table(
     Column("fetched_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
-minute_universe_members = Table(
-    "minute_universe_members",
+# Constituents of the indexes EventAlpha covers, mirrored from config/index_members.json.
+index_members = Table(
+    "index_members",
     metadata,
     Column("index_name", String(16), primary_key=True),
     Column("symbol", String(16), primary_key=True),

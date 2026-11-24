@@ -127,7 +127,10 @@ class TelegramRelay {
                 }
                 for (var record : batch) {
                     try {
-                        send(EventStreamReader.toEvent(record).fields());
+                        var event = EventStreamReader.toEvent(record).fields();
+                        if (eligibleForDelivery(event)) {
+                            send(event);
+                        }
                     } catch (HttpClientErrorException e) {
                         if (e.getStatusCode().value() == 429) {
                             throw e; // rate limited: back off and retry this entry
@@ -196,6 +199,11 @@ class TelegramRelay {
                 .toBodilessEntity();
     }
 
+    // Old queued entries predate the producer's index filter.
+    static boolean eligibleForDelivery(Map<String, String> event) {
+        return "1".equals(event.get("index_filtered")) && !event.getOrDefault("tickers", "").isBlank();
+    }
+
     static String format(Map<String, String> e) {
         String icon = switch (e.getOrDefault("sentiment", "")) {
             case "bullish" -> "🟢";
@@ -204,7 +212,7 @@ class TelegramRelay {
         };
         String tickers = e.getOrDefault("tickers", "");
         String events = e.getOrDefault("events", "");
-        return icon + " <b>" + HtmlUtils.htmlEscape(tickers.isBlank() ? "—" : tickers) + "</b>"
+        return icon + (tickers.isBlank() ? "" : " <b>" + HtmlUtils.htmlEscape(tickers) + "</b>")
                 + (e.getOrDefault("form_type", "").isBlank() ? "" : " · " + HtmlUtils.htmlEscape(e.get("form_type")))
                 + "\n" + HtmlUtils.htmlEscape(e.getOrDefault("title", ""))
                 + "\n" + HtmlUtils.htmlEscape(e.getOrDefault("sentiment", "?")) + " (" + e.getOrDefault("sentiment_score", "?")

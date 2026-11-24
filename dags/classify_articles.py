@@ -12,8 +12,8 @@ Triggered by the `eventalpha.articles` asset (no clock schedule): runs whenever 
 * **Provider-neutral:** the DAG talks to `eventalpha.classification`; the provider (and its SDK)
   is chosen by `CLASSIFIER_PROVIDER`.
 * **Pool `classifier_api`** bounds concurrent batches; each batch runs async requests under a semaphore.
-* **High-impact events** (material, company-specific) are appended to the Redis Stream
-  `eventalpha:events` once per article, for the API's live SSE feed and Telegram relay.
+* **High-impact events** (material, company-specific, with an S&P 500 or Nasdaq-100 ticker) are appended to
+  the Redis Stream `eventalpha:events` once per article, for the API's live SSE feed and Telegram relay.
 * **Quality checks** run as their own tasks (common-sql operators), so bad data fails loudly
   in the UI instead of flowing into the daily signal.
 """
@@ -24,7 +24,17 @@ from datetime import timedelta
 
 from airflow.providers.common.sql.operators.sql import SQLColumnCheckOperator, SQLTableCheckOperator
 from airflow.sdk import dag, task
-from eventalpha_common import ARTICLE_SCORES, ARTICLES, DB_CONN_ID, DEFAULT_ARGS, START_DATE, chunk, engine, settings
+from eventalpha_common import (
+    ARTICLE_SCORES,
+    ARTICLES,
+    DB_CONN_ID,
+    DEFAULT_ARGS,
+    START_DATE,
+    chunk,
+    engine,
+    index_members,
+    settings,
+)
 
 MAX_PER_RUN = 600
 BATCH_SIZE = 25
@@ -77,8 +87,10 @@ def classify_articles():
             from eventalpha.event_stream import article_feed_items, publish_alerts, publish_feed_items
 
             with redis.Redis.from_url(settings().redis_url, decode_responses=True) as r:
-                published = publish_alerts(r, articles, rows)  # high impact → Telegram relay
                 publish_feed_items(r, article_feed_items(articles, rows))  # everything → web UI
+                members = index_members().members
+                eligible_symbols = set(members["sp500"]).union(members["nasdaq100"])
+                published = publish_alerts(r, articles, rows, eligible_symbols=eligible_symbols)
         if rows and rows[0]["model"] != classifier.model_id:
             print(f"warning: requested {classifier.model_id}, provider answered as {rows[0]['model']}")
         if articles and not rows:

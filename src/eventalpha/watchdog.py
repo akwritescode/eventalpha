@@ -12,9 +12,14 @@ from __future__ import annotations
 
 import html
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import date
 from typing import Any
 
 REPEAT_HOURS = 12
+STALE_REPEAT_HOURS = 7 * 24  # a quarterly refresh is due, not an outage: remind weekly
+# Index membership changes at the quarterly rebalances (March, June, September, December), so
+# reviewed reference files older than a quarter plus a little slack are due for a refresh.
+MAX_REFERENCE_AGE_DAYS = 100
 _KEY = "eventalpha:watchdog:{kind}:{name}"
 
 
@@ -33,9 +38,19 @@ def _truthy(value: Any) -> bool:
     return value is True or str(value).lower() == "true"
 
 
-def due(client, kind: str, names: Sequence[str]) -> list[str]:
-    """The names not reported in the last REPEAT_HOURS; marks them reported."""
-    return [n for n in names if client.set(_KEY.format(kind=kind, name=n), "1", nx=True, ex=REPEAT_HOURS * 3600)]
+def stale_references(as_of: Mapping[str, date], today: date, max_age_days: int = MAX_REFERENCE_AGE_DAYS) -> list[str]:
+    """Reviewed reference files (index membership, SPX weights) older than `max_age_days`,
+    as "<file> (as of <date>, <n> days)"; the date in the name makes a refreshed file a new item."""
+    return sorted(
+        f"{name} (as of {d.isoformat()}, {(today - d).days} days)"
+        for name, d in as_of.items()
+        if (today - d).days > max_age_days
+    )
+
+
+def due(client, kind: str, names: Sequence[str], hours: int = REPEAT_HOURS) -> list[str]:
+    """The names not reported in the last `hours`; marks them reported."""
+    return [n for n in names if client.set(_KEY.format(kind=kind, name=n), "1", nx=True, ex=hours * 3600)]
 
 
 def clear(client, kind: str, healthy: Iterable[str]) -> None:
@@ -54,8 +69,8 @@ def forget_resolved(client, kind: str, current: Iterable[str]) -> None:
         client.delete(*stale)
 
 
-def format_alert(paused: Sequence[str], broken: Sequence[str]) -> str | None:
-    if not (paused or broken):
+def format_alert(paused: Sequence[str], broken: Sequence[str], stale: Sequence[str] = ()) -> str | None:
+    if not (paused or broken or stale):
         return None
     lines = ["⚠️ <b>EventAlpha pipeline check</b>"]
     if paused:
@@ -64,4 +79,7 @@ def format_alert(paused: Sequence[str], broken: Sequence[str]) -> str | None:
     if broken:
         lines.append("Failing to load (DAG missing from Airflow):")
         lines += [f"• <code>{html.escape(f)}</code>" for f in broken]
+    if stale:
+        lines.append("Reference data due for its quarterly refresh (see scripts/refresh_*.py):")
+        lines += [f"• {html.escape(f)}" for f in stale]
     return "\n".join(lines)

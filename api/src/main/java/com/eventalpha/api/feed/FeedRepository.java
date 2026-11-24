@@ -185,12 +185,13 @@ class FeedRepository {
         if ("spx_overnight".equals(type)) {
             JsonNode c = p.path("components");
             JsonNode counts = p.path("counts");
-            components.put("Top-50 news", num(c.path("megacap_news")));
+            int universeSize = p.path("universe_size").asInt(50);
+            components.put("Top-" + universeSize + " news", num(c.path("megacap_news")));
             components.put("Breadth", num(c.path("breadth")));
             contributing = counts.path("company_specific").asInt(0);
             title = "SPX · " + direction + " overnight outlook";
             List<String> parts = new ArrayList<>();
-            parts.add(counts.path("megacap_articles").asInt(0) + " top-50 company items and "
+            parts.add(counts.path("megacap_articles").asInt(0) + " top-" + universeSize + " company items and "
                     + contributing + " company news items in the session");
             List<String> macro = new ArrayList<>();
             p.path("macro_next_session").forEach(m -> macro.add(m.path("title").asString("")));

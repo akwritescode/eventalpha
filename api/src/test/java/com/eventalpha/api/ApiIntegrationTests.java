@@ -407,6 +407,21 @@ class ApiIntegrationTests {
     }
 
     @Test
+    @org.springframework.transaction.annotation.Transactional
+    void calendarTodayIsTheNewYorkTradingDateNotTheUtcDate() throws Exception {
+        // After 19:00 ET the UTC date is already tomorrow; today's after-close reporters must stay.
+        jdbc.sql("""
+                INSERT INTO earnings_events (ticker, event_date, description, status, fiscal_year, market_cap, source)
+                VALUES ('NYTODAY', (now() AT TIME ZONE 'America/New_York')::date, 'Earnings Result', 'Confirmed',
+                        2027, 9.9e12, 'tradier'),
+                       ('NYPAST', (now() AT TIME ZONE 'America/New_York')::date - 1, 'Earnings Result', 'Confirmed',
+                        2027, 9.8e12, 'tradier')""").update();
+        mvc.perform(get("/api/v1/calendar/upcoming")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.earnings[0].ticker").value("NYTODAY"))
+                .andExpect(jsonPath("$.data.earnings[?(@.ticker == 'NYPAST')]", hasSize(0)));
+    }
+
+    @Test
     void latestSignalPerTypeWithPayload() throws Exception {
         mvc.perform(get("/api/v1/signals/latest"))
                 .andExpect(status().isOk())
@@ -442,6 +457,24 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.data[?(@.type == 'signal')]", hasSize(3)))
                 .andExpect(jsonPath("$.data[?(@.id == 'article:2')].label").value("SEC · 8-K"))
                 .andExpect(jsonPath("$.data[?(@.id == 'article:2')].classification.sentiment").value("bearish"));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void feedUsesTheUniverseSizeFromEachSignal() throws Exception {
+        jdbc.sql("""
+                UPDATE signals
+                SET payload = '{"universe_size": 100, "components": {"megacap_news": 0.1}}'
+                WHERE signal_type = 'spx_overnight' AND session_date = current_date - 2
+                """).update();
+        mvc.perform(get("/api/v1/feed").param("types", "signal"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.signal.score == 0.04)].summary")
+                        .value("0 top-50 company items and 369 company news items in the session."))
+                .andExpect(jsonPath("$.data[?(@.signal.score == -0.2)].summary")
+                        .value("0 top-100 company items and 0 company news items in the session."))
+                .andExpect(jsonPath("$.data[?(@.signal.score == -0.2)].signal.components['Top-100 news']")
+                        .value(0.1));
     }
 
     @Test

@@ -57,8 +57,9 @@ def render_spx_overnight(s: Signal) -> str:
         f"close: {_moves(p['market_close'], ('SPX', 'VIX', 'TLT', 'USO', 'UUP', 'HYG'))}",
     ]
     c = p["counts"]
+    universe_size = p.get("universe_size", 50)
     lines.append(
-        f"news: {c['company_specific']} company items ({c['megacap_articles']} top-50)"
+        f"news: {c['company_specific']} company items ({c['megacap_articles']} top-{universe_size})"
         + (f", <b>{c['unscored']} not yet scored</b>" if c["unscored"] else "")
     )
     for a in p["megacap_news"][:5]:

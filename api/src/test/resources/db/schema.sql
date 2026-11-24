@@ -396,5 +396,13 @@ CREATE TABLE price_bars_minute_default PARTITION OF price_bars_minute DEFAULT;
 
 UPDATE alembic_version SET version_num='b6a729ce18f0' WHERE alembic_version.version_num = '78d93c0ea314';
 
+-- Running upgrade b6a729ce18f0 -> d2f4a6b8c0e1
+
+ALTER TABLE minute_universe_members RENAME TO index_members;
+
+ALTER TABLE index_members RENAME CONSTRAINT minute_universe_members_pkey TO index_members_pkey;
+
+UPDATE alembic_version SET version_num='d2f4a6b8c0e1' WHERE alembic_version.version_num = 'b6a729ce18f0';
+
 COMMIT;
 

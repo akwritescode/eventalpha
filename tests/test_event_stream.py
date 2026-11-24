@@ -6,8 +6,8 @@ from eventalpha.event_stream import FEED_STREAM, STREAM, article_feed_items, pub
 
 ARTICLE = {
     "id": 2,
-    "title": "AAON 8-K: Guidance cut",
-    "tickers": ["AAON"],
+    "title": "NVDA 8-K: Guidance cut",
+    "tickers": ["NVDA"],
     "form_type": "8-K",
     "source": "sec_edgar",
     "url": "https://example.com/2",
@@ -33,18 +33,18 @@ def test_publishes_only_material_company_news_once():
     macro = ARTICLE | {"id": 4}
     scores = [score(2, 2.8), score(3, 1.0), score(4, 2.9, company_specific=0.2)]
 
-    assert publish_alerts(r, [ARTICLE, routine, macro], scores) == 1
-    assert publish_alerts(r, [ARTICLE, routine, macro], scores) == 0  # retried task: no duplicate
+    assert publish_alerts(r, [ARTICLE, routine, macro], scores, eligible_symbols={"NVDA"}) == 1
+    assert publish_alerts(r, [ARTICLE, routine, macro], scores, eligible_symbols={"NVDA"}) == 0
 
     [(entry_id, fields)] = r.xrange(STREAM)
-    assert fields["article_id"] == "2" and fields["tickers"] == "AAON"
+    assert fields["article_id"] == "2" and fields["tickers"] == "NVDA"
     assert fields["events"] == "guidance_lowered,earnings_results"  # by probability, >= 0.7 only
     assert fields["published_at"] == "2026-11-13T21:00:00+00:00"
 
 
 def test_no_model_identifiers_leave_the_pipeline():
     r = fakeredis.FakeRedis(decode_responses=True)
-    publish_alerts(r, [ARTICLE], [score(2, 2.8)])
+    publish_alerts(r, [ARTICLE], [score(2, 2.8)], eligible_symbols={"NVDA"})
     [(_, fields)] = r.xrange(STREAM)
     assert "model" not in fields and not any("jev" in v for v in fields.values())
 
@@ -58,3 +58,18 @@ def test_every_scored_article_goes_to_the_feed_stream_once():
     got = {f["ref"]: f for _, f in r.xrange(FEED_STREAM)}
     assert got["article:2"]["impact"] == "high" and got["article:2"]["kind"] == "sec"
     assert got["article:3"]["impact"] == "normal" and got["article:3"]["kind"] == "news"
+
+
+def test_alert_requires_index_membership_and_only_displays_eligible_tickers():
+    r = fakeredis.FakeRedis(decode_responses=True)
+    articles = [
+        ARTICLE | {"tickers": ["AAON", "brk/b", "BRK.B", "NVDA", "DIA"]},
+        ARTICLE | {"id": 3, "tickers": ["AAON"]},
+        ARTICLE | {"id": 4, "tickers": []},
+    ]
+    scores = [score(article["id"], 2.8) for article in articles]
+
+    assert publish_alerts(r, articles, scores, eligible_symbols={"BRK-B", "NVDA"}) == 1
+    [(_, fields)] = r.xrange(STREAM)
+    assert fields["tickers"] == "BRK-B,NVDA"
+    assert fields["index_filtered"] == "1"
