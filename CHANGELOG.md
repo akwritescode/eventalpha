@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/akwritescode/eventalpha/compare/v0.5.0...v0.6.0) (2026-11-25)
+
+
+### Features
+
+* mark telegram messages from the local stack with [local] ([06f04b5](https://github.com/akwritescode/eventalpha/commit/06f04b54bd4f1587e293be17e2cc4fc4fcb75033))
+* **web:** drop the browser-only note under past conversations ([1400bbb](https://github.com/akwritescode/eventalpha/commit/1400bbb73f9e3403fd97735e03918f82477f4a24))
+
+
+### Bug fixes
+
+* **api:** clarify missing catalyst for SPY noon rebound ([a905c65](https://github.com/akwritescode/eventalpha/commit/a905c6506a9ea1f21d70521c91e51a82b247bcc2))
+
 ## [0.5.0](https://github.com/akwritescode/eventalpha/compare/v0.4.0...v0.5.0) (2026-11-25)
 
 
