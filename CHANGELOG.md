@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/akwritescode/eventalpha/compare/v0.3.0...v0.4.0) (2026-11-25)
+
+
+### Features
+
+* **web:** keep past conversations and paginate the chat ([5206648](https://github.com/akwritescode/eventalpha/commit/52066485d2ef499649b5e7ec63a1d2a77747c70d))
+* **web:** single range field for any past window up to 7 days ([474043b](https://github.com/akwritescode/eventalpha/commit/474043b61c7a24cb85f318f1313149e25518e7b7))
+
 ## [0.3.0](https://github.com/akwritescode/eventalpha/compare/v0.2.0...v0.3.0) (2026-11-25)
 
 
