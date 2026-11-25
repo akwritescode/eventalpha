@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/akwritescode/eventalpha/compare/v0.2.0...v0.3.0) (2026-11-25)
+
+
+### Features
+
+* **api:** resolve chat questions to move windows with claude ([f5d153d](https://github.com/akwritescode/eventalpha/commit/f5d153dc250eff366ce771a7425a95a26b7e33a5))
+* **web:** merge the move panels into one ask eventalpha chat ([268fc64](https://github.com/akwritescode/eventalpha/commit/268fc64e5c92030e4f21b0bbb1ac44cb7369c9d2))
+
 ## [0.2.0](https://github.com/akwritescode/eventalpha/compare/v0.1.1...v0.2.0) (2026-11-24)
 
 
