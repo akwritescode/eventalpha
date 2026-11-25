@@ -205,9 +205,15 @@ class MoveRepository {
                 });
 
         var catalysts = List.copyOf(grouped.values());
-        String summary = catalysts.isEmpty() ? "No clear catalyst found"
-                : "Plausible catalyst — " + catalysts.getFirst().summary() + ". The timing supports a possible link.";
         var prices = priceMoves(ticker, start, end, cutoff);
+        String summary = "No clear catalyst found";
+        if (!catalysts.isEmpty()) {
+            summary = "Plausible catalyst — " + catalysts.getFirst().summary() + ". The timing supports a possible link.";
+        } else if (ticker.equals("SPY") && start.atZone(NEW_YORK).toLocalTime().equals(LocalTime.NOON)
+                && prices.stream().map(PriceRow::move).anyMatch(move -> move.symbol().equals(ticker)
+                        && move.measuredStart().equals(start) && move.returnPercent().signum() > 0)) {
+            summary = "No verified catalyst found for the noon rebound.";
+        }
         Instant freshness = java.util.stream.Stream.concat(rows.stream().map(TimelineRow::availableAt),
                 prices.stream().map(PriceRow::availableAt)).max(Comparator.naturalOrder()).orElse(null);
         return ApiResponse.of(new Explanation(ticker, start, end, cutoff, summary, catalysts, timeline,

@@ -378,6 +378,22 @@ class ApiIntegrationTests {
 
     @Test
     @org.springframework.transaction.annotation.Transactional
+    void spyNoonReboundWithoutCatalystUsesSpecificSummary() throws Exception {
+        jdbc.sql("""
+                INSERT INTO price_bars_minute (symbol, started_at, open, close, first_seen_at)
+                VALUES ('SPY', '2025-06-10 11:59-04', 500, 500, '2025-06-10 12:00-04'),
+                       ('SPY', '2025-06-10 12:29-04', 504, 505, '2025-06-10 12:30-04')
+                """).update();
+        mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
+                        .param("start", "2025-06-10T12:00:00-04:00")
+                        .param("end", "2025-06-10T12:30:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
+                .andExpect(jsonPath("$.data.summary").value("No verified catalyst found for the noon rebound."));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
     void todayHandlesMissingSessionTimes() throws Exception {
         jdbc.sql("""
                 INSERT INTO market_sessions (day, is_open, description, source)
