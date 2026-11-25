@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/akwritescode/eventalpha/compare/v0.4.0...v0.5.0) (2026-11-25)
+
+
+### Features
+
+* allow move windows of up to two weeks ([d331028](https://github.com/akwritescode/eventalpha/commit/d331028eb15ad7cb189523fa2705f4815416e375))
+* **web:** compact the custom range into a chip-height pill ([1482689](https://github.com/akwritescode/eventalpha/commit/14826898c628654d51aa2ced16873fc1a54ac0ff))
+
 ## [0.4.0](https://github.com/akwritescode/eventalpha/compare/v0.3.0...v0.4.0) (2026-11-25)
 
 
