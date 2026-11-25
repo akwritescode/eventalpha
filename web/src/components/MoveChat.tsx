@@ -256,15 +256,11 @@ export function MoveChat() {
           </Stack>
           <Stack direction="row" gap={1} flexWrap="wrap" role="group" aria-label="Time frame">
             {TIME_FRAMES.map(frame => <Chip key={frame.label} label={frame.label} onClick={() => pickFrame(frame)} disabled={busy} />)}
-            <Chip label="Custom…" variant={custom ? 'filled' : 'outlined'} onClick={openCustom} disabled={busy} />
+            {custom ? (
+              <DateRangeField value={custom} onChange={setCustom} onSubmit={submitCustom} onClose={() => setCustom(undefined)}
+                disabled={busy} max={pickerValue(Math.floor(Date.now() / MINUTE_MS) * MINUTE_MS)} />
+            ) : <Chip label="Custom…" variant="outlined" onClick={openCustom} disabled={busy} />}
           </Stack>
-          {custom && (
-            <Stack component="form" onSubmit={submitCustom} gap={1} alignItems="flex-start" sx={{ mt: 1.5 }}>
-              <DateRangeField value={custom} onChange={setCustom} disabled={busy}
-                max={pickerValue(Math.floor(Date.now() / MINUTE_MS) * MINUTE_MS)} />
-              <Button type="submit" variant="contained" disabled={busy} sx={{ flexShrink: 0 }}>Explain</Button>
-            </Stack>
-          )}
         </Box>
       )}
 

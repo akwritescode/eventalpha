@@ -135,6 +135,9 @@ it('explains a custom multi-day range picked in the single range field', async (
   await flush();
   expect(thread().getByText('Windows can be up to 7 days long.')).toBeInTheDocument();
   expect(api.getJson).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Close custom range' }));
+  expect(screen.queryByRole('group', { name: 'Custom range' })).not.toBeInTheDocument();
+  expect(within(screen.getByRole('group', { name: 'Time frame' })).getByText('Custom…')).toBeInTheDocument();
 });
 
 it('starts a new conversation and keeps the old one in the list', async () => {
