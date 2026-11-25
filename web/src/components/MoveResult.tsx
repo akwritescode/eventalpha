@@ -96,6 +96,23 @@ function Returns({ result }: { result: Explanation }) {
   );
 }
 
+/** One-line stand-in for an older result in the chat: ticker, window, its return; click to expand. */
+export function MoveResultSummary({ result, onExpand }: { result: Explanation; onExpand: () => void }) {
+  const move = result.priceMoves.find(p => p.symbol === result.ticker);
+  const color = !move || move.returnPercent === 0 ? T.fgSecondary : move.returnPercent > 0 ? T.up : T.down;
+  return (
+    <Box component="button" type="button" onClick={onExpand} aria-label={`Show details for ${result.ticker}, ${windowLabel(result.start, result.end)}`}
+      sx={{ mt: 1, width: '100%', display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap', textAlign: 'left',
+        px: 1.5, py: 1, borderRadius: 2, border: `1px solid ${T.border}`, bgcolor: T.raised, color: T.fg, font: 'inherit',
+        cursor: 'pointer', '&:hover': { borderColor: T.borderStrong } }}>
+      <Box component="span" sx={{ fontFamily: MONO, fontWeight: 700 }}>{result.ticker}</Box>
+      <Typography component="span" variant="body2" color="text.secondary">{windowLabel(result.start, result.end)}</Typography>
+      {move && <Box component="span" sx={{ fontFamily: MONO, fontWeight: 600, color }}>{percent.format(move.returnPercent / 100)}</Box>}
+      <Typography component="span" variant="body2" sx={{ ml: 'auto', color: T.amber }}>Show details</Typography>
+    </Box>
+  );
+}
+
 export function MoveResult({ result }: { result: Explanation }) {
   const anchor = useId();
   const isDemo = result.ticker === demo.ticker && Date.parse(result.start) === Date.parse(demo.start)

@@ -22,6 +22,7 @@ const explanation = (path: string) => {
     summary: 'No clear catalyst found', catalysts: [], timeline: [], priceMoves: [{ symbol: 'NVDA', returnPercent: -1.25 }],
   } });
 };
+const thread = () => within(screen.getByRole('log', { name: 'Messages' }));
 const flush = () => act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
 
 async function ask(text: string) {
@@ -31,6 +32,7 @@ async function ask(text: string) {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   api.getJson.mockReset().mockImplementation(explanation);
   api.postJson.mockReset();
 });
@@ -45,7 +47,7 @@ it('explains a question the server resolved to a ticker and window', async () =>
   const request = api.getJson.mock.calls[0][0];
   expect(request).toContain('/tickers/NVDA/move-explanation?');
   expect(new URLSearchParams(request.split('?')[1]).get('start')).toBe('2026-11-24T14:30:00Z');
-  expect(screen.getByText('Why did Nvidia drop in the last hour?')).toBeInTheDocument();
+  expect(thread().getByText('Why did Nvidia drop in the last hour?')).toBeInTheDocument();
   expect(screen.getByLabelText('NVDA -1.25%')).toBeInTheDocument();
   expect(screen.getByText(/Try another time frame for/)).toBeInTheDocument();
 });
@@ -62,7 +64,7 @@ it('asks for a time frame after a bare ticker, then explains the chip picked', a
   const params = new URLSearchParams(api.getJson.mock.calls[0][0].split('?')[1]);
   expect(Date.parse(params.get('end')!) - Date.parse(params.get('start')!)).toBe(30 * 60_000);
   expect(params.has('asOf')).toBe(false);
-  expect(screen.getByText('NVDA · Last 30 min')).toBeInTheDocument();
+  expect(thread().getByText('NVDA · Last 30 min')).toBeInTheDocument();
 });
 
 it('sends follow-ups with the window on screen and replays as of its end', async () => {
@@ -120,4 +122,77 @@ it('runs the demo without the seven-day limit', async () => {
   expect(api.postJson).not.toHaveBeenCalled();
   const params = new URLSearchParams(api.getJson.mock.calls[0][0].split('?')[1]);
   expect(params.get('start')).toBe('2025-04-15T21:20:00.000Z');
+});
+
+it('starts a new conversation and keeps the old one in the list', async () => {
+  api.postJson.mockReturnValue(query({ ticker: 'NVDA', start: '2026-11-24T14:30:00Z', end: '2026-11-24T15:30:00Z' }));
+  render(<MoveChat />);
+  expect(screen.getByText('Past conversations appear here.')).toBeInTheDocument();
+  await ask('Why did NVDA move?');
+  const list = within(screen.getByRole('navigation', { name: 'Conversations' }));
+  expect(list.getByText('Why did NVDA move?')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+  expect(screen.queryByRole('group', { name: 'Time frame' })).not.toBeInTheDocument();
+  expect(screen.getByText('See the NVDA demo')).toBeInTheDocument();
+  expect(list.getByText('Why did NVDA move?')).toBeInTheDocument(); // the old one is a record now
+  await ask('What was known by then?');
+  expect(api.postJson).toHaveBeenLastCalledWith('/api/v1/move-query', expect.objectContaining({ contextTicker: undefined }));
+  expect(list.getByText('What was known by then?')).toBeInTheDocument();
+});
+
+it('reopens a past conversation after a reload and continues it', async () => {
+  api.postJson.mockReturnValue(query({ ticker: 'NVDA', tickerName: 'NVIDIA CORP', start: '2026-11-24T14:30:00Z', end: '2026-11-24T15:30:00Z' }));
+  const { unmount } = render(<MoveChat />);
+  await ask('Why did NVDA move?');
+  unmount();
+
+  render(<MoveChat />); // a fresh page load
+  expect(screen.queryByLabelText('NVDA -1.25%')).not.toBeInTheDocument();
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Conversations' })).getByText('Why did NVDA move?'));
+  expect(screen.getByLabelText('NVDA -1.25%')).toBeInTheDocument();
+  expect(screen.getByText(/Try another time frame for/)).toBeInTheDocument();
+
+  api.postJson.mockReturnValue(query({ ticker: 'NVDA', start: '2026-11-24T14:30:00Z', end: '2026-11-24T15:30:00Z', replay: true }));
+  await ask('What was known by then?');
+  expect(api.postJson).toHaveBeenLastCalledWith('/api/v1/move-query', expect.objectContaining({
+    contextTicker: 'NVDA', contextStart: '2026-11-24T14:30:00Z' }));
+  const stored = JSON.parse(window.localStorage.getItem('eventalpha.conversations.v1')!);
+  expect(stored).toHaveLength(1);
+  expect(stored[0].turns).toHaveLength(4);
+});
+
+it('deletes a conversation, starting a new one if it was open', async () => {
+  api.postJson.mockReturnValue(query({ ticker: 'NVDA', message: 'Which time frame for NVDA?' }));
+  render(<MoveChat />);
+  await ask('NVDA');
+  fireEvent.click(screen.getByRole('button', { name: 'Delete conversation “NVDA”' }));
+  expect(screen.getByText('Past conversations appear here.')).toBeInTheDocument();
+  expect(screen.queryByText('Which time frame for NVDA?')).not.toBeInTheDocument();
+  expect(JSON.parse(window.localStorage.getItem('eventalpha.conversations.v1')!)).toEqual([]);
+});
+
+it('pages older questions away and keeps only the newest result open', async () => {
+  api.postJson.mockReturnValue(query({ ticker: 'NVDA', start: '2026-11-24T14:30:00Z', end: '2026-11-24T15:30:00Z' }));
+  render(<MoveChat />);
+  for (const n of [1, 2, 3, 4, 5]) await ask(`Question ${n}`);
+
+  expect(thread().queryByText('Question 1')).not.toBeInTheDocument();
+  expect(thread().queryByText('Question 2')).not.toBeInTheDocument();
+  expect(thread().getByText('Question 5')).toBeInTheDocument();
+  // Questions 3 and 4 are visible but collapsed; only question 5's result is open.
+  expect(screen.getAllByLabelText(/^Show details for NVDA/)).toHaveLength(2);
+  expect(screen.getAllByText('Evidence timeline')).toHaveLength(1);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages (2 questions)' }));
+  expect(thread().getByText('Question 1')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Show earlier messages/ })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getAllByLabelText(/^Show details for NVDA/)[0]);
+  expect(screen.getAllByText('Evidence timeline')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Hide details' }));
+  expect(screen.getAllByText('Evidence timeline')).toHaveLength(1);
+
+  await ask('Question 6');
+  expect(thread().queryByText('Question 1')).not.toBeInTheDocument();
 });

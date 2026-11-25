@@ -4,19 +4,18 @@ import { alpha } from '@mui/material/styles';
 import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
 import SendRounded from '@mui/icons-material/SendRounded';
 import { ApiError } from '../api';
+import { ChatContext, Conversation, deleteConversation, loadConversations, newConversationId, saveConversation, Turn } from '../conversations';
 import demo from '../fixtures/move-demo.json';
 import { askMoveQuery, fetchExplanation, frameWindow, MINUTE_MS, MoveWindow, TickerOption, TIME_FRAMES, TimeFrame, windowError } from '../moveInput';
 import { MONO, T } from '../theme';
-import { Explanation, MoveResult, windowLabel } from './MoveResult';
+import { MoveResult, MoveResultSummary, windowLabel } from './MoveResult';
+import { ConversationList } from './ConversationList';
 import { Panel } from './ui';
 
-type Turn =
-  | { id: number; role: 'user'; text: string }
-  | { id: number; role: 'assistant'; text?: string; result?: Explanation; options?: TickerOption[]; pending?: boolean };
+type Context = ChatContext;
 
-type Context = { ticker?: string; name?: string; window?: MoveWindow };
-
-const MAX_TURNS = 6; // the last three exchanges; older results scroll off
+const MAX_TURNS = 40; // history kept in memory: 20 exchanges
+const PAGE_TURNS = 6; // shown at once: the last 3 exchanges; "Show earlier" adds a page
 const SUGGESTIONS = ['Why did NVDA move in the last hour?', 'What moved AAPL since yesterday’s close?', 'TSLA'];
 const DEMO_WINDOW = { start: new Date(demo.start).toISOString(), end: new Date(demo.end).toISOString() };
 
@@ -36,16 +35,52 @@ export function MoveChat() {
   const [replay, setReplay] = useState(false);
   const [custom, setCustom] = useState<{ start: string; end: string }>();
   const [busy, setBusy] = useState(false);
+  const [shown, setShown] = useState(PAGE_TURNS);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [conversationId, setConversationId] = useState(newConversationId);
+  const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
+  const [saveTick, setSaveTick] = useState(0);
   const nextId = useRef(0);
   const bottom = useRef<HTMLDivElement>(null);
+  const latest = useRef({ conversationId, turns, context, replay });
+  latest.current = { conversationId, turns, context, replay };
 
-  useEffect(() => { bottom.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); }, [turns]);
+  // Save once an exchange has settled (reply, ticker and window all updated). Opening an old
+  // conversation doesn't save, so browsing history doesn't reorder it.
+  useEffect(() => {
+    if (saveTick === 0) return;
+    const { conversationId: id, turns: all, context: ctx, replay: asOfEnd } = latest.current;
+    if (all.length) setConversations(saveConversation({ id, turns: all, context: ctx, replay: asOfEnd }));
+  }, [saveTick]);
+
+  useEffect(() => { bottom.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); }, [turns.length]);
+
+  /** Shows a conversation (or a blank one); the one on screen is already saved. */
+  function show(id: string, conversation?: Conversation) {
+    setConversationId(id);
+    setTurns(conversation?.turns || []);
+    setContext(conversation?.context || {});
+    setReplay(conversation?.replay || false);
+    setCustom(undefined);
+    setQuestion('');
+    setShown(PAGE_TURNS);
+    setExpanded(new Set());
+    nextId.current = Math.max(0, ...(conversation?.turns || []).map(t => t.id + 1));
+  }
+
+  const newConversation = () => show(newConversationId());
+
+  function removeConversation(id: string) {
+    setConversations(deleteConversation(id));
+    if (id === conversationId) newConversation();
+  }
 
   /** Adds the user's line and a pending reply, runs `work`, then replaces the pending reply. */
   async function exchange(userText: string, work: () => Promise<Omit<Extract<Turn, { role: 'assistant' }>, 'id' | 'role'>>) {
     if (busy) return;
     const replyId = nextId.current + 1;
     nextId.current += 2;
+    setShown(PAGE_TURNS); // a new question collapses the thread back to its latest page
     setTurns(t => [...t, { id: replyId - 1, role: 'user' as const, text: userText },
       { id: replyId, role: 'assistant' as const, pending: true }].slice(-MAX_TURNS));
     setBusy(true);
@@ -57,6 +92,7 @@ export function MoveChat() {
     }
     setTurns(t => t.map(turn => (turn.id === replyId ? { id: replyId, role: 'assistant' as const, ...reply } : turn)));
     setBusy(false);
+    setSaveTick(n => n + 1);
   }
 
   async function explain(ticker: string, window: MoveWindow, asOfEnd: boolean, name?: string) {
@@ -132,8 +168,24 @@ export function MoveChat() {
     setCustom({ start: pickerValue(end - 60 * MINUTE_MS), end: pickerValue(end) });
   }
 
+  const visible = turns.slice(-shown);
+  const hiddenQuestions = Math.ceil((turns.length - visible.length) / 2);
+  // Only the newest result is open; older ones shrink to a one-line summary until expanded.
+  const latestResult = [...turns].reverse().find(t => t.role === 'assistant' && t.result)?.id;
+  const toggle = (id: number) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
+
   return (
     <Panel title="Ask EventAlpha" subtitle="Ask why a stock moved, or type a ticker and pick a time frame.">
+      <Box sx={{ display: 'grid', gap: { xs: 2, md: 2.5 }, gridTemplateColumns: { xs: '1fr', md: '200px minmax(0, 1fr)' }, alignItems: 'start' }}>
+      <Box sx={{ pr: { md: 2 }, borderRight: { md: `1px solid ${T.border}` } }}>
+        <ConversationList conversations={conversations} currentId={conversationId} disabled={busy}
+          onNew={newConversation} onOpen={c => show(c.id, c)} onDelete={removeConversation} />
+      </Box>
+      <Box sx={{ minWidth: 0 }}>
       {turns.length === 0 && (
         <Box sx={{ py: 1 }}>
           <Typography color="text.secondary" sx={{ mb: 1.5 }}>
@@ -147,8 +199,14 @@ export function MoveChat() {
         </Box>
       )}
 
-      <Stack spacing={1.5} aria-live="polite">
-        {turns.map(turn => turn.role === 'user' ? (
+      {hiddenQuestions > 0 && (
+        <Button size="small" fullWidth onClick={() => setShown(s => s + PAGE_TURNS)}
+          sx={{ mb: 1.5, color: T.fgSecondary, border: `1px dashed ${T.border}` }}>
+          Show earlier messages ({hiddenQuestions} {hiddenQuestions === 1 ? 'question' : 'questions'})
+        </Button>
+      )}
+      <Stack spacing={1.5} role="log" aria-label="Messages" aria-live="polite">
+        {visible.map(turn => turn.role === 'user' ? (
           <Box key={turn.id} sx={{ alignSelf: 'flex-end', maxWidth: '85%', px: 1.75, py: 1, borderRadius: '16px 16px 4px 16px',
             bgcolor: alpha(T.amber, 0.14), color: T.fg }}>
             <Typography>{turn.text}</Typography>
@@ -175,7 +233,14 @@ export function MoveChat() {
                       ))}
                     </Stack>
                   )}
-                  {turn.result && <MoveResult result={turn.result} />}
+                  {turn.result && (turn.id === latestResult || expanded.has(turn.id) ? (
+                    <>
+                      <MoveResult result={turn.result} />
+                      {turn.id !== latestResult && (
+                        <Button size="small" onClick={() => toggle(turn.id)} sx={{ mt: 0.5, color: T.fgSecondary }}>Hide details</Button>
+                      )}
+                    </>
+                  ) : <MoveResultSummary result={turn.result} onExpand={() => toggle(turn.id)} />)}
                 </>
               )}
             </Box>
@@ -229,6 +294,8 @@ export function MoveChat() {
               </InputAdornment>
             ),
           }} />
+      </Box>
+      </Box>
       </Box>
     </Panel>
   );
