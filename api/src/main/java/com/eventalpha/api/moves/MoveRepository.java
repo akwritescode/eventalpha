@@ -14,6 +14,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -23,6 +25,15 @@ class MoveRepository {
     private static final ZoneId NEW_YORK = ZoneId.of("America/New_York");
     private static final Duration CONTEXT = Duration.ofDays(1);
     private static final List<String> BENCHMARKS = List.of("SPY", "SMH");
+    // Keep aligned with the minute-candle collection universe.
+    private static final Map<String, String> SECTOR_ETFS = Map.ofEntries(
+            Map.entry("XLC", "Communication services"), Map.entry("XLY", "Consumer discretionary"),
+            Map.entry("XLP", "Consumer staples"), Map.entry("XLE", "Energy"),
+            Map.entry("XLF", "Financials"), Map.entry("XLV", "Health care"),
+            Map.entry("XLI", "Industrials"), Map.entry("XLB", "Materials"),
+            Map.entry("XLRE", "Real estate"), Map.entry("XLK", "Technology"),
+            Map.entry("XLU", "Utilities"), Map.entry("SMH", "Semiconductors"), Map.entry("IGV", "Software"));
+    private static final int SECTOR_MOVER_LIMIT = 3;
 
     // Use a single warehouse snapshot. Replays omit articles that have since been edited
     // because the article store retains only the current version.
@@ -157,8 +168,13 @@ class MoveRepository {
     record PriceMove(String symbol, BigDecimal startPrice, BigDecimal endPrice, BigDecimal returnPercent,
                      Instant measuredStart, Instant measuredEnd, Instant dataAsOf) {}
 
+    record SectorMove(String sector, PriceMove price) {}
+
+    record SectorMovers(List<SectorMove> gainers, List<SectorMove> decliners) {}
+
     record Explanation(String ticker, Instant start, Instant end, Instant asOf, String summary,
-                       List<Catalyst> catalysts, List<Evidence> timeline, List<PriceMove> priceMoves, List<String> benchmarks) {}
+                       List<Catalyst> catalysts, List<Evidence> timeline, List<PriceMove> priceMoves,
+                       List<String> benchmarks, SectorMovers sectorMovers) {}
 
     private record TimelineRow(Evidence evidence, Instant availableAt, Double catalystMateriality) {}
 
@@ -206,7 +222,7 @@ class MoveRepository {
 
         var catalysts = List.copyOf(grouped.values());
         var prices = priceMoves(ticker, start, end, cutoff);
-        String summary = "No clear catalyst found";
+        String summary = "No verified catalyst found for this move.";
         if (!catalysts.isEmpty()) {
             summary = "Plausible catalyst — " + catalysts.getFirst().summary() + ". The timing supports a possible link.";
         } else if (ticker.equals("SPY") && start.atZone(NEW_YORK).toLocalTime().equals(LocalTime.NOON)
@@ -214,10 +230,32 @@ class MoveRepository {
                         && move.measuredStart().equals(start) && move.returnPercent().signum() > 0)) {
             summary = "No verified catalyst found for the noon rebound.";
         }
-        Instant freshness = java.util.stream.Stream.concat(rows.stream().map(TimelineRow::availableAt),
+        var moves = prices.stream().map(PriceRow::move).toList();
+        var sectorMovers = sectorMovers(ticker, moves);
+        Instant freshness = Stream.concat(rows.stream().map(TimelineRow::availableAt),
                 prices.stream().map(PriceRow::availableAt)).max(Comparator.naturalOrder()).orElse(null);
         return ApiResponse.of(new Explanation(ticker, start, end, cutoff, summary, catalysts, timeline,
-                prices.stream().map(PriceRow::move).toList(), BENCHMARKS), freshness);
+                moves.stream().filter(move -> move.symbol().equals(ticker) || BENCHMARKS.contains(move.symbol())).toList(),
+                BENCHMARKS, sectorMovers), freshness);
+    }
+
+    private SectorMovers sectorMovers(String ticker, List<PriceMove> moves) {
+        var reference = moves.stream().filter(move -> move.symbol().equals(ticker) || move.symbol().equals("SPY"))
+                .findFirst().orElse(null);
+        if (reference == null) return new SectorMovers(List.of(), List.of());
+
+        var comparable = moves.stream().filter(move -> SECTOR_ETFS.containsKey(move.symbol())
+                        && move.measuredStart().equals(reference.measuredStart())
+                        && move.measuredEnd().equals(reference.measuredEnd()))
+                .toList();
+        var byReturn = Comparator.comparing(PriceMove::returnPercent);
+        var gainers = comparable.stream().filter(move -> move.returnPercent().signum() > 0)
+                .sorted(byReturn.reversed().thenComparing(PriceMove::symbol)).limit(SECTOR_MOVER_LIMIT)
+                .map(move -> new SectorMove(SECTOR_ETFS.get(move.symbol()), move)).toList();
+        var decliners = comparable.stream().filter(move -> move.returnPercent().signum() < 0)
+                .sorted(byReturn.thenComparing(PriceMove::symbol)).limit(SECTOR_MOVER_LIMIT)
+                .map(move -> new SectorMove(SECTOR_ETFS.get(move.symbol()), move)).toList();
+        return new SectorMovers(gainers, decliners);
     }
 
     private List<PriceRow> priceMoves(String ticker, Instant start, Instant end, Instant cutoff) {
@@ -227,7 +265,8 @@ class MoveRepository {
 ) {
             return List.of();
         }
-        var symbols = java.util.stream.Stream.concat(java.util.stream.Stream.of(ticker), BENCHMARKS.stream()).distinct().toList();
+        var symbols = Stream.concat(Stream.of(ticker), Stream.concat(BENCHMARKS.stream(), SECTOR_ETFS.keySet().stream()))
+                .distinct().toList();
         return jdbc.sql(PRICES)
                 .param("symbols", symbols)
                 .param("start", Timestamp.from(start))

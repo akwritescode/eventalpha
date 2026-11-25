@@ -6,7 +6,7 @@ const base: Explanation = {
   start: '2025-04-15T21:20:00Z',
   end: '2025-04-15T21:35:00Z',
   asOf: '2025-04-15T22:00:00Z',
-  summary: 'No clear catalyst found',
+  summary: 'No verified catalyst found for this move.',
   catalysts: [],
   priceMoves: [
     { symbol: 'NVDA', returnPercent: -2.5 },
@@ -44,4 +44,16 @@ it('marks a replay and explains missing prices and evidence', () => {
   expect(screen.getByText('As known at window end')).toBeInTheDocument();
   expect(screen.getByText('No matching evidence in the timeline.')).toBeInTheDocument();
   expect(screen.getByText(/Intraday prices unavailable for this ticker and window/)).toBeInTheDocument();
+});
+
+it('shows ranked sector ETFs with their names and returns', () => {
+  render(<MoveResult result={{ ...base, timeline: [], sectorMovers: {
+    gainers: [{ sector: 'Software', price: { symbol: 'IGV', returnPercent: 3 } }],
+    decliners: [{ sector: 'Consumer staples', price: { symbol: 'XLP', returnPercent: -2 } }],
+  } }} />);
+  expect(screen.getByText('Top gainers')).toBeInTheDocument();
+  expect(screen.getByText('Top decliners')).toBeInTheDocument();
+  expect(screen.getByText('IGV').closest('li')).toHaveTextContent('Software IGV+3%');
+  expect(screen.getByText('XLP').closest('li')).toHaveTextContent('Consumer staples XLP-2%');
+  expect(screen.queryByLabelText('SMH -1%')).not.toBeInTheDocument();
 });

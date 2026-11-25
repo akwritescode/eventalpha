@@ -19,6 +19,9 @@ type Evidence = {
   verifiedAt: string | null;
 };
 
+type PriceMove = { symbol: string; returnPercent: number; measuredStart?: string; measuredEnd?: string; dataAsOf?: string };
+type SectorMove = { sector: string; price: PriceMove };
+
 export type Explanation = {
   ticker: string;
   start: string;
@@ -28,7 +31,8 @@ export type Explanation = {
   catalysts: { summary: string; evidenceId: string }[];
   timeline: Evidence[];
   benchmarks?: string[];
-  priceMoves: { symbol: string; returnPercent: number; measuredStart?: string; measuredEnd?: string; dataAsOf?: string }[];
+  priceMoves: PriceMove[];
+  sectorMovers?: { gainers: SectorMove[]; decliners: SectorMove[] };
 };
 
 const eastern = (options: Intl.DateTimeFormatOptions) =>
@@ -65,7 +69,12 @@ function Returns({ result }: { result: Explanation }) {
       </Typography>
     );
   }
-  const symbols = Array.from(new Set([result.ticker, ...(result.benchmarks || result.priceMoves.map(p => p.symbol))]));
+  const benchmarks = result.benchmarks || result.priceMoves.map(p => p.symbol);
+  const symbols = Array.from(new Set([result.ticker, ...benchmarks.filter(symbol => !result.sectorMovers || symbol !== 'SMH')]));
+  const sectorGroups = result.sectorMovers && [
+    { label: 'Top gainers', moves: result.sectorMovers.gainers },
+    { label: 'Top decliners', moves: result.sectorMovers.decliners },
+  ].filter(group => group.moves.length > 0);
   return (
     <>
       <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
@@ -92,6 +101,28 @@ function Returns({ result }: { result: Explanation }) {
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
         Returns use the latest completed candles at the window edges. Hover a card for exact times.
       </Typography>
+      {sectorGroups && sectorGroups.length > 0 && (
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="overline" component="h3" color="text.secondary">Sector ETF moves</Typography>
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' } }}>
+            {sectorGroups.map(({ label, moves }) => (
+              <Box key={label}>
+                <Typography variant="subtitle2">{label}</Typography>
+                <Stack component="ul" spacing={0.5} sx={{ listStyle: 'none', p: 0, my: 0.5 }}>
+                  {moves.map(({ sector, price }) => (
+                    <Stack component="li" key={price.symbol} direction="row" justifyContent="space-between" gap={1}>
+                      <Typography variant="body2">{sector} <Box component="span" sx={{ color: T.fgSecondary }}>{price.symbol}</Box></Typography>
+                      <Typography variant="body2" sx={{ fontFamily: MONO, color: price.returnPercent > 0 ? T.up : T.down }}>
+                        {percent.format(price.returnPercent / 100)}
+                      </Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
     </>
   );
 }

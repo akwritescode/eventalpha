@@ -255,7 +255,7 @@ class ApiIntegrationTests {
         mvc.perform(get(path).param("start", start).param("end", end).param("asOf", "2025-04-15T17:24:00-04:00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.timeline", hasSize(0)))
-                .andExpect(jsonPath("$.data.summary").value("No clear catalyst found"));
+                .andExpect(jsonPath("$.data.summary").value("No verified catalyst found for this move."));
 
         mvc.perform(get(path).param("start", start).param("end", end).param("asOf", "2025-04-15T17:26:00-04:00"))
                 .andExpect(status().isOk())
@@ -394,6 +394,32 @@ class ApiIntegrationTests {
 
     @Test
     @org.springframework.transaction.annotation.Transactional
+    void ranksAtMostThreeSectorEtfsPerDirectionOnMatchingCandles() throws Exception {
+        jdbc.sql("""
+                INSERT INTO price_bars_minute (symbol, started_at, open, close, first_seen_at)
+                SELECT sector.symbol, bar.started_at::timestamptz, 100,
+                    CASE WHEN bar.is_end THEN sector.closing ELSE 100 END, '2025-06-10 12:30-04'
+                FROM (VALUES ('SPY', 102), ('IGV', 106), ('SMH', 105), ('XLK', 104), ('XLI', 103),
+                             ('XLP', 94), ('XLF', 95), ('XLE', 96), ('XLU', 97), ('XLV', 100)) sector(symbol, closing)
+                CROSS JOIN (VALUES ('2025-06-10 11:59-04', false), ('2025-06-10 12:29-04', true)) bar(started_at, is_end)
+                UNION ALL
+                SELECT 'XLC', '2025-06-10 11:59-04'::timestamptz, 100, 100, '2025-06-10 12:30-04'::timestamptz
+                UNION ALL
+                SELECT 'XLC', '2025-06-10 12:28-04'::timestamptz, 100, 120, '2025-06-10 12:30-04'::timestamptz
+                """).update();
+        mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
+                        .param("start", "2025-06-10T12:00:00-04:00")
+                        .param("end", "2025-06-10T12:30:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.priceMoves[0].returnPercent").value(2.0))
+                .andExpect(jsonPath("$.data.sectorMovers.gainers[*].price.symbol")
+                        .value(org.hamcrest.Matchers.contains("IGV", "SMH", "XLK")))
+                .andExpect(jsonPath("$.data.sectorMovers.decliners[*].price.symbol")
+                        .value(org.hamcrest.Matchers.contains("XLP", "XLF", "XLE")));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
     void todayHandlesMissingSessionTimes() throws Exception {
         jdbc.sql("""
                 INSERT INTO market_sessions (day, is_open, description, source)
@@ -415,7 +441,7 @@ class ApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.timeline[0].timing").value("after"))
                 .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
-                .andExpect(jsonPath("$.data.summary").value("No clear catalyst found"));
+                .andExpect(jsonPath("$.data.summary").value("No verified catalyst found for this move."));
     }
 
     @Test

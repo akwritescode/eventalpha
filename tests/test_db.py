@@ -314,7 +314,7 @@ def test_collection_universe_uses_reviewed_snapshot_without_network(engine: Engi
     query = "SELECT index_name, symbol, xmin::text FROM index_members ORDER BY 1, 2"
     try:
         symbols = universe.collection_symbols(engine, snapshot)
-        assert symbols == sorted(set().union(*members.values()) | universe.BENCHMARKS)
+        assert symbols == sorted(set().union(*members.values()) | universe.BENCHMARKS | universe.SECTOR_ETFS)
         assert {"AMD", "MU", "BRK-B", "PANW"} <= set(symbols)
         with engine.connect() as conn:
             original_versions = conn.execute(text(query)).all()

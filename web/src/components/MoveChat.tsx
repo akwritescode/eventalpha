@@ -99,7 +99,9 @@ export function MoveChat() {
     setContext({ ticker, name, window });
     return {
       text: asOfEnd ? `Here’s what EventAlpha had collected by the end of that window.`
-        : `Here are possible drivers for ${ticker}, ${windowLabel(window.start, window.end)}.`,
+        : data.catalysts.length
+          ? `Here are possible drivers for ${ticker}, ${windowLabel(window.start, window.end)}.`
+          : `Here’s what EventAlpha found for ${ticker}, ${windowLabel(window.start, window.end)}.`,
       result: data,
     };
   }

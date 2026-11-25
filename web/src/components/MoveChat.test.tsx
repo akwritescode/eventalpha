@@ -19,7 +19,7 @@ const explanation = (path: string) => {
   return Promise.resolve({ data: {
     ticker: path.split('/')[4], start: params.get('start'), end: params.get('end'),
     asOf: params.get('asOf') || new Date().toISOString(),
-    summary: 'No clear catalyst found', catalysts: [], timeline: [], priceMoves: [{ symbol: 'NVDA', returnPercent: -1.25 }],
+    summary: 'No verified catalyst found for this move.', catalysts: [], timeline: [], priceMoves: [{ symbol: 'NVDA', returnPercent: -1.25 }],
   } });
 };
 const thread = () => within(screen.getByRole('log', { name: 'Messages' }));
@@ -49,6 +49,8 @@ it('explains a question the server resolved to a ticker and window', async () =>
   expect(new URLSearchParams(request.split('?')[1]).get('start')).toBe('2026-11-24T14:30:00Z');
   expect(thread().getByText('Why did Nvidia drop in the last hour?')).toBeInTheDocument();
   expect(screen.getByLabelText('NVDA -1.25%')).toBeInTheDocument();
+  expect(thread().getByText(/EventAlpha found for NVDA/)).toBeInTheDocument();
+  expect(thread().getByText('No verified catalyst found for this move.')).toBeInTheDocument();
   expect(screen.getByText(/Try another time frame for/)).toBeInTheDocument();
 });
 
