@@ -40,6 +40,8 @@ class MoveQueryController {
     private static final Pattern TICKER = Pattern.compile("[A-Za-z.\\-]{1,10}");
     private static final int MAX_QUESTION = 300;
     private static final int MAX_OPTIONS = 5;
+    /** Same as move-explanation's limit (MoveController). */
+    private static final Duration MAX_WINDOW = Duration.ofDays(7);
     static final String TRY = "Try “Why did NVDA move in the last hour?” or just type a ticker.";
 
     private final MoveQuestionParser parser;
@@ -138,8 +140,8 @@ class MoveQueryController {
         String note = null;
         switch (kind) {
             case LAST_MINUTES -> {
-                if (parsed.minutes() < 1 || parsed.minutes() > 24 * 60) {
-                    note = "Choose a window from 1 minute to 24 hours.";
+                if (parsed.minutes() < 1 || parsed.minutes() > MAX_WINDOW.toMinutes()) {
+                    note = "Choose a window from 1 minute to 7 days.";
                 } else {
                     end = now.truncatedTo(ChronoUnit.MINUTES);
                     start = end.minus(Duration.ofMinutes(parsed.minutes()));
@@ -191,14 +193,11 @@ class MoveQueryController {
     }
 
     private static String rangeProblem(Instant start, Instant end, Instant now) {
-        if (!end.isAfter(start) || Duration.between(start, end).compareTo(Duration.ofDays(1)) > 0) {
-            return "That window must be up to 24 hours long.";
+        if (!end.isAfter(start) || Duration.between(start, end).compareTo(MAX_WINDOW) > 0) {
+            return "That window must be up to 7 days long.";
         }
         if (end.isAfter(now)) {
             return "That window hasn’t ended yet.";
-        }
-        if (start.isBefore(now.minus(Duration.ofDays(7)))) {
-            return "EventAlpha covers the past 7 days.";
         }
         return null;
     }

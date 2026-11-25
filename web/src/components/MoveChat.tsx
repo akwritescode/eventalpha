@@ -5,11 +5,11 @@ import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
 import SendRounded from '@mui/icons-material/SendRounded';
 import { ApiError } from '../api';
 import { ChatContext, Conversation, deleteConversation, loadConversations, newConversationId, saveConversation, Turn } from '../conversations';
-import demo from '../fixtures/move-demo.json';
 import { askMoveQuery, fetchExplanation, frameWindow, MINUTE_MS, MoveWindow, TickerOption, TIME_FRAMES, TimeFrame, windowError } from '../moveInput';
 import { MONO, T } from '../theme';
 import { MoveResult, MoveResultSummary, windowLabel } from './MoveResult';
 import { ConversationList } from './ConversationList';
+import { DateRange, DateRangeField } from './DateRangeField';
 import { Panel } from './ui';
 
 type Context = ChatContext;
@@ -17,7 +17,6 @@ type Context = ChatContext;
 const MAX_TURNS = 40; // history kept in memory: 20 exchanges
 const PAGE_TURNS = 6; // shown at once: the last 3 exchanges; "Show earlier" adds a page
 const SUGGESTIONS = ['Why did NVDA move in the last hour?', 'What moved AAPL since yesterday’s close?', 'TSLA'];
-const DEMO_WINDOW = { start: new Date(demo.start).toISOString(), end: new Date(demo.end).toISOString() };
 
 /** datetime-local value in the viewer's zone. */
 function pickerValue(time: number) {
@@ -33,7 +32,7 @@ export function MoveChat() {
   const [question, setQuestion] = useState('');
   const [context, setContext] = useState<Context>({});
   const [replay, setReplay] = useState(false);
-  const [custom, setCustom] = useState<{ start: string; end: string }>();
+  const [custom, setCustom] = useState<DateRange>();
   const [busy, setBusy] = useState(false);
   const [shown, setShown] = useState(PAGE_TURNS);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -159,10 +158,6 @@ export function MoveChat() {
     });
   }
 
-  function showDemo() {
-    void exchange('Show me the NVDA demo', () => explain(demo.ticker, DEMO_WINDOW, false, 'NVIDIA'));
-  }
-
   function openCustom() {
     const end = Math.floor(Date.now() / MINUTE_MS) * MINUTE_MS;
     setCustom({ start: pickerValue(end - 60 * MINUTE_MS), end: pickerValue(end) });
@@ -193,8 +188,6 @@ export function MoveChat() {
           </Typography>
           <Stack direction="row" gap={1} flexWrap="wrap">
             {SUGGESTIONS.map(s => <Chip key={s} label={s} variant="outlined" onClick={() => submitText(s)} />)}
-            <Chip label="See the NVDA demo" variant="outlined" onClick={showDemo}
-              sx={{ borderColor: alpha(T.amber, 0.5), color: T.amber }} />
           </Stack>
         </Box>
       )}
@@ -266,13 +259,10 @@ export function MoveChat() {
             <Chip label="Custom…" variant={custom ? 'filled' : 'outlined'} onClick={openCustom} disabled={busy} />
           </Stack>
           {custom && (
-            <Stack component="form" onSubmit={submitCustom} direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems={{ sm: 'center' }} sx={{ mt: 1.5 }}>
-              {(['start', 'end'] as const).map(edge => (
-                <TextField key={edge} size="small" type="datetime-local" label={edge === 'start' ? 'From' : 'To'} required
-                  InputLabelProps={{ shrink: true }} value={custom[edge]} disabled={busy}
-                  onChange={e => setCustom({ ...custom, [edge]: e.target.value })} />
-              ))}
-              <Button type="submit" variant="contained" disabled={busy}>Explain</Button>
+            <Stack component="form" onSubmit={submitCustom} gap={1} alignItems="flex-start" sx={{ mt: 1.5 }}>
+              <DateRangeField value={custom} onChange={setCustom} disabled={busy}
+                max={pickerValue(Math.floor(Date.now() / MINUTE_MS) * MINUTE_MS)} />
+              <Button type="submit" variant="contained" disabled={busy} sx={{ flexShrink: 0 }}>Explain</Button>
             </Stack>
           )}
         </Box>

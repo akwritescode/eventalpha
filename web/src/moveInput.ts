@@ -32,14 +32,14 @@ export function recentWindow(minutes: number, now = Date.now()): MoveWindow {
   return { start: new Date(end - minutes * MINUTE_MS).toISOString(), end: new Date(end).toISOString() };
 }
 
-export function windowError(start: number, end: number, demo = false): string | undefined {
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > DAY_MS) {
-    return 'Choose a start and end time up to 24 hours apart.';
-  }
+/** The longest window the move-explanation API accepts (MoveController). */
+export const MAX_WINDOW_DAYS = 7;
+
+export function windowError(start: number, end: number): string | undefined {
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'Choose a start and an end time.';
+  if (end <= start) return 'The end must be after the start.';
   if (end > Date.now()) return 'Choose a window that has already ended.';
-  if (!demo && start < Date.now() - 7 * DAY_MS) {
-    return 'EventAlpha focuses on recent moves. Choose a window entirely within the past 7 days.';
-  }
+  if (end - start > MAX_WINDOW_DAYS * DAY_MS) return `Windows can be up to ${MAX_WINDOW_DAYS} days long.`;
 }
 
 /** The time-frame chips shown once a ticker is picked. */

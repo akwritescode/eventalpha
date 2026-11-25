@@ -115,13 +115,26 @@ it('reports a closed market for the Today chip instead of guessing a window', as
   expect(api.getJson.mock.calls.some(([path]) => path.includes('move-explanation'))).toBe(false);
 });
 
-it('runs the demo without the seven-day limit', async () => {
+it('explains a custom multi-day range picked in the single range field', async () => {
+  api.postJson.mockReturnValue(query({ ticker: 'NVDA', message: 'Which time frame for NVDA?' }));
   render(<MoveChat />);
-  fireEvent.click(screen.getByText('See the NVDA demo'));
+  await ask('NVDA');
+  fireEvent.click(within(screen.getByRole('group', { name: 'Time frame' })).getByText('Custom…'));
+  const range = within(screen.getByRole('group', { name: 'Custom range' }));
+  fireEvent.change(range.getByLabelText('From'), { target: { value: '2026-11-17T09:30' } });
+  fireEvent.change(range.getByLabelText('To'), { target: { value: '2026-11-20T16:00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Explain' }));
   await flush();
-  expect(api.postJson).not.toHaveBeenCalled();
   const params = new URLSearchParams(api.getJson.mock.calls[0][0].split('?')[1]);
-  expect(params.get('start')).toBe('2025-04-15T21:20:00.000Z');
+  expect(Date.parse(params.get('end')!) - Date.parse(params.get('start')!)).toBe((3 * 24 + 6.5) * 3600_000);
+
+  fireEvent.click(within(screen.getByRole('group', { name: 'Time frame' })).getByText('Custom…'));
+  fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-11-01T09:30' } });
+  fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-11-20T16:00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Explain' }));
+  await flush();
+  expect(thread().getByText('Windows can be up to 7 days long.')).toBeInTheDocument();
+  expect(api.getJson).toHaveBeenCalledTimes(1);
 });
 
 it('starts a new conversation and keeps the old one in the list', async () => {
@@ -134,7 +147,7 @@ it('starts a new conversation and keeps the old one in the list', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
   expect(screen.queryByRole('group', { name: 'Time frame' })).not.toBeInTheDocument();
-  expect(screen.getByText('See the NVDA demo')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'TSLA' })).toBeInTheDocument(); // back to the starter suggestions
   expect(list.getByText('Why did NVDA move?')).toBeInTheDocument(); // the old one is a record now
   await ask('What was known by then?');
   expect(api.postJson).toHaveBeenLastCalledWith('/api/v1/move-query', expect.objectContaining({ contextTicker: undefined }));

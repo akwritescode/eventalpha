@@ -6,9 +6,11 @@ const { getJson, postJson } = jest.requireMock('./api') as { getJson: jest.Mock;
 test('relative windows align to completed minutes and validate bounds', () => {
   const now = Date.parse('2026-11-18T18:30:23Z');
   expect(recentWindow(30, now)).toEqual({ start: '2026-11-18T18:00:00.000Z', end: '2026-11-18T18:30:00.000Z' });
-  expect(windowError(now, now)).toContain('up to 24 hours');
-  expect(windowError(now - 25 * 3600_000, now)).toContain('24 hours');
-  expect(windowError(Date.now() - 8 * 86_400_000, Date.now() - 8 * 86_400_000 + 60_000)).toContain('past 7 days');
+  expect(windowError(now, now)).toBe('The end must be after the start.');
+  expect(windowError(now - 3 * 86_400_000, now)).toBeUndefined(); // multi-day windows are fine
+  expect(windowError(Date.parse('2026-01-02T14:30:00Z'), Date.parse('2026-01-02T21:00:00Z'))).toBeUndefined(); // so are old ones
+  expect(windowError(now - 8 * 86_400_000, now)).toBe('Windows can be up to 7 days long.');
+  expect(windowError(Date.now() - 60_000, Date.now() + 60_000)).toBe('Choose a window that has already ended.');
 });
 
 test('the question goes to the server with what is on screen as context', async () => {

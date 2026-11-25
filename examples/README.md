@@ -29,10 +29,11 @@ COMMIT;
 The **Ask EventAlpha** panel takes a question such as “Why did NVDA move in the last 30 minutes?”
 or just a ticker. `POST /api/v1/move-query` turns the question into a ticker and a window:
 Claude (`EVENTALPHA_ASK_MODEL`, default `claude-haiku-5-5`) fills a fixed JSON schema through
-structured outputs, and the API checks the ticker against `ticker_universe` and the window against
-the seven-day, 24-hour limits before the browser calls `move-explanation`. A bare ticker skips the
+structured outputs, and the API checks the ticker against `ticker_universe` and that the window has
+ended and is at most seven days long before the browser calls `move-explanation`. A bare ticker skips the
 model and offers time-frame chips: the last 30 minutes, hour or two hours, today, since
-yesterday's close, or a custom range. Follow-ups such as “What was known by then?” reuse the window
+yesterday's close, or a custom range (any past start and end up to seven days apart, picked in
+one range field). Follow-ups such as “What was known by then?” reuse the window
 on screen and replay it as of its end.
 
 “Today” uses the New York regular session from the exchange calendar, ending at the current minute
@@ -47,11 +48,12 @@ instead. Questions that reach the model are limited to `EVENTALPHA_ASK_RATE_LIMI
 (default 10) per IP, on top of the API's global limit.
 
 After `make seed`, start the web app with `cd web && REACT_APP_API_URL=http://localhost:8081 npm start`.
-Select **See the NVDA demo** in **Ask EventAlpha**. The demo uses NVIDIA's
+In **Ask EventAlpha**, type `NVDA`, choose **Custom…** and pick April 15, 2025, 5:20 to 5:35 p.m. ET
+(entered in your browser's time zone). The demo uses NVIDIA's
 [April 15, 2025 8-K](https://www.sec.gov/Archives/edgar/data/1045810/000104581025000082/nvda-20250409.htm)
 with its actual EDGAR acceptance time. The X post IDs and EventAlpha observation and review times
-are simulated. The X links in this fixture are placeholders. The selected window is illustrative. User-entered windows in the web app must fall within the past
-seven days. The demo button opens the historical fixture, and the read API can replay stored evidence.
+are simulated. The X links in this fixture are placeholders. The selected window is illustrative,
+and the read API can replay stored evidence.
 
 Then ask “What was known by then?” to see what the fixture makes available by
 5:35 p.m. ET. The 5:29 p.m. discovery was first seen at 5:37 p.m. and the unverified 5:40 p.m.
@@ -151,5 +153,5 @@ while True:
                 event = {}
 ```
 
-The UI demo and SQL seed share `web/src/fixtures/move-demo.json`. Regenerate the seed with
+The demo notice in the UI and the SQL seed share `web/src/fixtures/move-demo.json`. Regenerate the seed with
 `python scripts/render_move_demo.py`; use `--check` to verify it without writing.

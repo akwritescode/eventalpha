@@ -150,13 +150,18 @@ class ApiIntegrationTests {
     }
 
     @Test
-    void windowsOutsideThePastWeekAreRejectedWithAPrompt() throws Exception {
+    void anyPastWindowUpToSevenDaysIsAccepted() throws Exception {
         parsed(new ParsedQuestion(true, "AAON", WindowKind.RANGE, 0,
-                "2020-01-02T09:30:00-05:00", "2020-01-02T10:00:00-05:00", false));
-        ask("{\"question\":\"aaon on jan 2 2020\"}")
+                "2026-01-05T09:30:00-05:00", "2026-01-08T16:00:00-05:00", false));
+        ask("{\"question\":\"aaon jan 5 to 8\"}")
                 .andExpect(jsonPath("$.data.ticker").value("AAON"))
+                .andExpect(jsonPath("$.data.start").value("2026-01-05T14:30:00Z"))
+                .andExpect(jsonPath("$.data.message").doesNotExist());
+        parsed(new ParsedQuestion(true, "AAON", WindowKind.RANGE, 0,
+                "2026-01-01T09:30:00-05:00", "2026-01-20T16:00:00-05:00", false));
+        ask("{\"question\":\"aaon in january\"}")
                 .andExpect(jsonPath("$.data.start").doesNotExist())
-                .andExpect(jsonPath("$.data.message").value("EventAlpha covers the past 7 days. Pick a time frame for AAON."));
+                .andExpect(jsonPath("$.data.message").value("That window must be up to 7 days long. Pick a time frame for AAON."));
     }
 
     @Test
