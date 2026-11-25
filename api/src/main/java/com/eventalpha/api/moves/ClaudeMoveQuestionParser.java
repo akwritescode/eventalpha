@@ -29,7 +29,7 @@ class ClaudeMoveQuestionParser implements MoveQuestionParser {
     // Frozen text first, the varying question last.
     private static final String SYSTEM = """
             You turn a user's question about a US stock's price move into search parameters for EventAlpha, \
-            which explains moves in past windows of up to 7 days. Times are New York time; \
+            which explains moves in past windows of up to 14 days. Times are New York time; \
             the regular session runs 09:30-16:00.
 
             Fill every field:

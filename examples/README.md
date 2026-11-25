@@ -30,9 +30,9 @@ The **Ask EventAlpha** panel takes a question such as “Why did NVDA move in th
 or just a ticker. `POST /api/v1/move-query` turns the question into a ticker and a window:
 Claude (`EVENTALPHA_ASK_MODEL`, default `claude-haiku-5-5`) fills a fixed JSON schema through
 structured outputs, and the API checks the ticker against `ticker_universe` and that the window has
-ended and is at most seven days long before the browser calls `move-explanation`. A bare ticker skips the
+ended and is at most 14 days long before the browser calls `move-explanation`. A bare ticker skips the
 model and offers time-frame chips: the last 30 minutes, hour or two hours, today, since
-yesterday's close, or a custom range (any past start and end up to seven days apart, picked in
+yesterday's close, or a custom range (any past start and end up to 14 days apart, picked in
 one range field). Follow-ups such as “What was known by then?” reuse the window
 on screen and replay it as of its end.
 

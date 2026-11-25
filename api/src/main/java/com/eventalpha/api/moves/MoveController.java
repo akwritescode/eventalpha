@@ -15,6 +15,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 class MoveController {
 
+    /** Longest move window: enough for a week or two around a weekend. */
+    static final Duration MAX_WINDOW = Duration.ofDays(14);
+
     private final MoveRepository repo;
 
     MoveController(MoveRepository repo) {
@@ -45,8 +48,9 @@ class MoveController {
             @RequestParam(required = false) OffsetDateTime asOf) {
         Instant windowStart = start.toInstant();
         Instant windowEnd = end.toInstant();
-        if (!windowEnd.isAfter(windowStart) || Duration.between(windowStart, windowEnd).compareTo(Duration.ofDays(7)) > 0) {
-            throw new IllegalArgumentException("The move window must have a positive duration of at most 7 days.");
+        if (!windowEnd.isAfter(windowStart) || Duration.between(windowStart, windowEnd).compareTo(MAX_WINDOW) > 0) {
+            throw new IllegalArgumentException("The move window must have a positive duration of at most "
+                    + MAX_WINDOW.toDays() + " days.");
         }
         Instant now = Instant.now();
         Instant cutoff = asOf == null ? now : asOf.toInstant();

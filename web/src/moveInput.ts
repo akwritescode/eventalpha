@@ -33,7 +33,7 @@ export function recentWindow(minutes: number, now = Date.now()): MoveWindow {
 }
 
 /** The longest window the move-explanation API accepts (MoveController). */
-export const MAX_WINDOW_DAYS = 7;
+export const MAX_WINDOW_DAYS = 14;
 
 export function windowError(start: number, end: number): string | undefined {
   if (!Number.isFinite(start) || !Number.isFinite(end)) return 'Choose a start and an end time.';

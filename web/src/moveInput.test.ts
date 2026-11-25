@@ -9,7 +9,8 @@ test('relative windows align to completed minutes and validate bounds', () => {
   expect(windowError(now, now)).toBe('The end must be after the start.');
   expect(windowError(now - 3 * 86_400_000, now)).toBeUndefined(); // multi-day windows are fine
   expect(windowError(Date.parse('2026-01-02T14:30:00Z'), Date.parse('2026-01-02T21:00:00Z'))).toBeUndefined(); // so are old ones
-  expect(windowError(now - 8 * 86_400_000, now)).toBe('Windows can be up to 7 days long.');
+  expect(windowError(now - 14 * 86_400_000, now)).toBeUndefined(); // two weeks is the limit
+  expect(windowError(now - 15 * 86_400_000, now)).toBe('Windows can be up to 14 days long.');
   expect(windowError(Date.now() - 60_000, Date.now() + 60_000)).toBe('Choose a window that has already ended.');
 });
 

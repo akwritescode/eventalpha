@@ -150,18 +150,29 @@ class ApiIntegrationTests {
     }
 
     @Test
-    void anyPastWindowUpToSevenDaysIsAccepted() throws Exception {
+    void moveExplanationAcceptsTwoWeekWindowsButNotLonger() throws Exception {
+        mvc.perform(get("/api/v1/tickers/AAON/move-explanation")
+                        .param("start", "2026-01-02T14:30:00Z").param("end", "2026-01-16T14:30:00Z"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/tickers/AAON/move-explanation")
+                        .param("start", "2026-01-02T14:30:00Z").param("end", "2026-01-16T14:31:00Z"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("The move window must have a positive duration of at most 14 days."));
+    }
+
+    @Test
+    void anyPastWindowUpToTwoWeeksIsAccepted() throws Exception {
         parsed(new ParsedQuestion(true, "AAON", WindowKind.RANGE, 0,
-                "2026-01-05T09:30:00-05:00", "2026-01-08T16:00:00-05:00", false));
-        ask("{\"question\":\"aaon jan 5 to 8\"}")
+                "2026-01-05T09:30:00-05:00", "2026-01-16T16:00:00-05:00", false));
+        ask("{\"question\":\"aaon jan 5 to 16\"}")
                 .andExpect(jsonPath("$.data.ticker").value("AAON"))
                 .andExpect(jsonPath("$.data.start").value("2026-01-05T14:30:00Z"))
                 .andExpect(jsonPath("$.data.message").doesNotExist());
         parsed(new ParsedQuestion(true, "AAON", WindowKind.RANGE, 0,
-                "2026-01-01T09:30:00-05:00", "2026-01-20T16:00:00-05:00", false));
+                "2026-01-01T09:30:00-05:00", "2026-01-21T16:00:00-05:00", false));
         ask("{\"question\":\"aaon in january\"}")
                 .andExpect(jsonPath("$.data.start").doesNotExist())
-                .andExpect(jsonPath("$.data.message").value("That window must be up to 7 days long. Pick a time frame for AAON."));
+                .andExpect(jsonPath("$.data.message").value("That window must be up to 14 days long. Pick a time frame for AAON."));
     }
 
     @Test
