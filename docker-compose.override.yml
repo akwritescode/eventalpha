@@ -8,6 +8,7 @@ x-local-airflow: &local-airflow
     dockerfile: docker/airflow.Dockerfile
   environment: &local-env
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"  # no login screen, localhost only
+    ALERT_PREFIX: "[local]"  # Telegram alerts from this stack are marked; production sends none
   volumes:
     - ./dags:/opt/airflow/dags
     - ./src:/opt/airflow/project/src
@@ -35,6 +36,8 @@ services:
 
   api:
     build: ./api
+    environment:
+      ALERT_PREFIX: "[local]"  # the event relay's channel posts from this stack are marked
     ports: ["127.0.0.1:8081:8081"]
 
   # Optional Redis GUI: docker compose --profile tools up -d redisinsight → http://localhost:5540

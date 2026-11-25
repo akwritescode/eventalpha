@@ -37,4 +37,14 @@ class TelegramRelayFormatTest {
         assertThat(TelegramRelay.isBusyGroup(wrapped)).isTrue();
         assertThat(TelegramRelay.isBusyGroup(new RuntimeException("connection refused"))).isFalse();
     }
+
+    @Test
+    void postsCarryTheEnvironmentPrefixOnlyWhenSet() {
+        var event = Map.of("title", "NVIDIA 8-K", "tickers", "NVDA");
+        var local = new TelegramRelay(null, "token", "-100", "[local]");
+        var production = new TelegramRelay(null, "token", "-100", "");
+        assertThat(local.text(event)).isEqualTo("[local] " + TelegramRelay.format(event));
+        assertThat(production.text(event)).isEqualTo(TelegramRelay.format(event));
+        assertThat(new TelegramRelay(null, "token", "-100", "<dev>").text(event)).startsWith("&lt;dev&gt; ");
+    }
 }

@@ -54,14 +54,18 @@ class TelegramRelay {
     private final StringRedisTemplate redis;
     private final RestClient telegram;
     private final String chatId;
+    /** "[local] " etc. from ALERT_PREFIX, so a dev stack's posts are recognisable; empty in production. */
+    private final String prefix;
     private final Consumer consumer;
     private volatile boolean running = true;
 
     TelegramRelay(StringRedisTemplate redis,
                   @Value("${eventalpha.telegram.bot-token}") String botToken,
-                  @Value("${eventalpha.telegram.chat-id}") String chatId) {
+                  @Value("${eventalpha.telegram.chat-id}") String chatId,
+                  @Value("${eventalpha.telegram.prefix:}") String prefix) {
         this.redis = redis;
         this.chatId = chatId;
+        this.prefix = prefix.isBlank() ? "" : HtmlUtils.htmlEscape(prefix.strip()) + " ";
         this.telegram = RestClient.builder().baseUrl("https://api.telegram.org/bot" + botToken).build();
         this.consumer = Consumer.from(GROUP, CONSUMER);
     }
@@ -193,10 +197,15 @@ class TelegramRelay {
 
     private void send(Map<String, String> event) {
         telegram.post().uri("/sendMessage").contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("chat_id", chatId, "text", format(event), "parse_mode", "HTML",
+                .body(Map.of("chat_id", chatId, "text", text(event), "parse_mode", "HTML",
                         "disable_web_page_preview", true))
                 .retrieve()
                 .toBodilessEntity();
+    }
+
+    /** The message as posted: the environment prefix, if any, then the formatted event. */
+    String text(Map<String, String> event) {
+        return prefix + format(event);
     }
 
     // Old queued entries predate the producer's index filter.

@@ -42,9 +42,30 @@ def test_failed_telegram_send_never_logs_the_bot_token(monkeypatch, caplog):
             400, json={"description": "Bad Request: chat not found"}, request=httpx.Request("POST", url)
         ),
     )
-    s = SimpleNamespace(telegram_bot_token=token, telegram_ops_chat_id="-100", telegram_chat_id=None)
+    s = SimpleNamespace(telegram_bot_token=token, telegram_ops_chat_id="-100", telegram_chat_id=None, alert_prefix=None)
     assert alerts.send_telegram(s, "hi", ops=True) is False
     assert "chat not found" in caplog.text and token not in caplog.text
+
+
+def test_alerts_carry_the_environment_prefix_when_set(monkeypatch):
+    from types import SimpleNamespace
+
+    import httpx
+
+    from eventalpha import alerts
+
+    sent = []
+
+    def post(url, **kw):
+        sent.append(kw["json"]["text"])
+        return httpx.Response(200, json={"ok": True}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(alerts.httpx, "post", post)
+    base = dict(telegram_bot_token="t", telegram_ops_chat_id="-100", telegram_chat_id="-200")
+    assert alerts.send_telegram(SimpleNamespace(**base, alert_prefix="[local]"), "🟠 <b>disk</b> at 95%", ops=True)
+    assert alerts.send_telegram(SimpleNamespace(**base, alert_prefix="[local]"), "signal")  # channel posts too
+    assert alerts.send_telegram(SimpleNamespace(**base, alert_prefix=None), "🟠 <b>disk</b> at 95%", ops=True)
+    assert sent == ["[local] 🟠 <b>disk</b> at 95%", "[local] signal", "🟠 <b>disk</b> at 95%"]
 
 
 def test_a_fixed_import_error_is_forgotten_so_a_new_break_alerts_again():

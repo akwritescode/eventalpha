@@ -25,6 +25,8 @@ def send_telegram(settings: Settings, text: str, ops: bool = False) -> bool:
         if ops:
             log.warning("ops alert not sent (TELEGRAM_OPS_CHAT_ID unset): %s", text[:200])
         return False
+    if settings.alert_prefix:
+        text = f"{html.escape(settings.alert_prefix)} {text}"
     # Never log the exception or URL as is: the bot token is part of the URL.
     target = "ops chat" if ops else "channel"
     try:

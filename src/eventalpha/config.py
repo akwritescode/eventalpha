@@ -36,6 +36,9 @@ class Settings:
     fred_api_key: str | None
     bls_api_key: str | None
     sec_requests_per_second: float
+    # Prepended to every Telegram message, e.g. "[local]" from docker-compose.override.yml, so
+    # alerts from a dev stack sharing the production bot are recognisable. Empty in production.
+    alert_prefix: str | None = None
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -62,4 +65,5 @@ class Settings:
             fred_api_key=_optional("FRED_API_KEY"),
             bls_api_key=_optional("BLS_API_KEY"),
             sec_requests_per_second=float(os.environ.get("SEC_REQUESTS_PER_SECOND", "4")),
+            alert_prefix=_optional("ALERT_PREFIX"),
         )
