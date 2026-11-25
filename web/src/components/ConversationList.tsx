@@ -64,9 +64,6 @@ export function ConversationList({ conversations, currentId, disabled, onNew, on
             })}
           </Box>
         )}
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-          Saved in this browser only.
-        </Typography>
       </Box>
     </Box>
   );
