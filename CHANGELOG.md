@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1](https://github.com/akwritescode/eventalpha/compare/v0.7.0...v0.7.1) (2026-11-26)
+
+
+### Bug fixes
+
+* **moves:** keep measured returns out of model prompts ([82ef04c](https://github.com/akwritescode/eventalpha/commit/82ef04c63e67dd1cd219aa3cab3693d458567454))
+* **moves:** keep periods out of release names in summaries ([5259154](https://github.com/akwritescode/eventalpha/commit/5259154c564817eb57f9afbed30b9fb329755f1a))
+* **web:** clarify move conclusions and calendar context ([3f1809a](https://github.com/akwritescode/eventalpha/commit/3f1809a192f3de700cc9e674a7351722c5b4357f))
+
 ## [0.7.0](https://github.com/akwritescode/eventalpha/compare/v0.6.0...v0.7.0) (2026-11-26)
 
 
