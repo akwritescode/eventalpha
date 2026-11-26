@@ -63,7 +63,9 @@ EVENTALPHA_RUN_LIVE_MOVE_EVAL=1 ./gradlew test --rerun-tasks --tests '*LiveMoveM
 variance. The report gives JEV-level precision and recall, what users would see (a cause is shown
 only when JEV accepts and Claude grounds a reason), misses by kind, verdicts that flip between
 runs, and articles within 0.15 of the threshold. Both prompt variants run: direction only, and with
-the measured return; assertions apply to the variant production uses.
+the measured return; assertions apply to the variant production uses (direction only since the
+Nov 26 rollback: with the return, JEV accepted a same-size move from another day and Claude dropped
+causes of gap moves).
 
 The eval runs the same articles and prompts with direction alone and with the measured return and
 actual candle close times. The JUnit XML under `api/build/test-results/test/` records model IDs,

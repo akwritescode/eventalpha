@@ -66,7 +66,9 @@ public class MoveCauses {
     public List<Cause> judge(String ticker, Instant start, Instant end, MeasuredReturn measured, List<Candidate> candidates) {
         if (!jev.available() || candidates.isEmpty()) return List.of();
         Direction direction = measured == null ? Direction.UNKNOWN : measured.direction();
-        String windowMove = describeMove(start, end, direction, measured);
+        // The measured return only sets the direction. Passing it to the models made JEV accept
+        // same-size moves from other days and Claude drop causes of gap moves (evals/README.md).
+        String windowMove = describeMove(start, end, direction, null);
         try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
             var futures = candidates.stream().limit(MAX_CANDIDATES)
                     .map(c -> pool.submit(() -> judgeOne(ticker, windowMove, direction, c))).toList();
@@ -83,7 +85,7 @@ public class MoveCauses {
     }
 
     private Cause judgeOne(String ticker, String windowMove, Direction direction, Candidate c) {
-        String key = "eventalpha:move-cause:v4:" + c.evidenceId() + ":" + c.contentHash() + ":" + ticker + " " + windowMove;
+        String key = "eventalpha:move-cause:v5:" + c.evidenceId() + ":" + c.contentHash() + ":" + ticker + " " + windowMove;
         String cached = cacheGet(key);
         double p;
         String reason;

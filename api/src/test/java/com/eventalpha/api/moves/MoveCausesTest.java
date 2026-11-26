@@ -71,15 +71,15 @@ class MoveCausesTest {
     }
 
     @Test
-    void bothModelsReceiveTheMeasuredReturnAndActualCandleTimes() {
+    void theMeasuredReturnSetsTheDirectionButStaysOutOfBothPrompts() {
         when(jev.explainsMove(anyString(), any())).thenReturn(OptionalDouble.of(0.8));
         when(summarizer.reason(anyString(), anyString(), anyString())).thenReturn(Optional.of("delayed tariffs"));
         causes.judge("SPY", START, END, MEASURED, List.of(RALLY));
 
-        String measured = "Measured return: +2.13% from the candle closes at 2026-11-25T11:59:00-05:00 and "
-                + "2026-11-25T13:59:00-05:00 (Eastern time)";
-        verify(jev).explainsMove(contains(measured), eq(Direction.UP));
-        verify(summarizer).reason(eq("SPY"), contains(measured), anyString());
+        String window = "rose between 2026-11-25T12:00:00-05:00 and 2026-11-25T14:00:00-05:00 (Eastern time)";
+        verify(jev).explainsMove(eq(MoveCauses.judgeInput("SPY", window, MoveCauses.text(RALLY))), eq(Direction.UP));
+        verify(summarizer).reason(eq("SPY"), eq(window), anyString());
+        verify(jev, never()).explainsMove(contains("Measured return"), any());
     }
 
     @Test
@@ -112,11 +112,17 @@ class MoveCausesTest {
         verify(jev, org.mockito.Mockito.times(2)).explainsMove(anyString(), any()); // the failure + one real call
         causes.judge("NVDA", START, END, MEASURED, List.of(RALLY));
         causes.judge("SPY", START.plusSeconds(60), END, MEASURED, List.of(RALLY));
+        // The return isn't in the prompts, so a different return or candle time reuses the verdict...
         causes.judge("SPY", START, END,
                 new MoveCauses.MeasuredReturn(MEASURED.start(), MEASURED.end(), new BigDecimal("2.5")), List.of(RALLY));
         causes.judge("SPY", START, END,
                 new MoveCauses.MeasuredReturn(MEASURED.start(), END, MEASURED.percent()), List.of(RALLY));
-        assertThat(cache).hasSize(5);
+        assertThat(cache).hasSize(3);
+        // ...but the opposite direction is a different question.
+        causes.judge("SPY", START, END,
+                new MoveCauses.MeasuredReturn(MEASURED.start(), MEASURED.end(), new BigDecimal("-2.13")), List.of(RALLY));
+        assertThat(cache).hasSize(4);
+        assertThat(cache.keySet()).allMatch(key -> key.startsWith("eventalpha:move-cause:v5:"));
     }
 
     @Test

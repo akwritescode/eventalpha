@@ -112,7 +112,7 @@ class LiveMoveModelEvalTest {
                     }
                     var kind = (String) article.getOrDefault("kind", "unlabelled");
                     outcomes.put(id, new Outcome(kind, expected, scores, shown, firstReason));
-                    if (withReturn) {
+                    if (!withReturn) { // production sends the direction only; with-return is the comparison
                         for (int run = 0; run < shown.size(); run++) {
                             checks.assertThat(shown.get(run))
                                     .as("shown as a cause: %s run %d (JEV %.2f)", id, run + 1, scores.get(run))
