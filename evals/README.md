@@ -37,6 +37,19 @@ same corpus, warehouse snapshot, and cutoff. The model-generated prose and the l
 require manual review. The API grader checks whether citations are eligible and labeled,
 while the reviewer checks whether they support the stated reason.
 
+## Article-level cases
+
+`article_judgments.json` adds 27 article judgments in five groups, on top of those in
+`move_explanations.json` (34 in all). Real events (NVDA's Nov 23 reinstatement rally and Nov 24
+giveback, SPY's Nov 25 morning selloff) are paraphrased in our own words with their `sources`;
+measured returns come from warehouse candles. Everything else is marked `synthetic`, including a
+fictional ticker (XQZR) so no claim is made about a real company. Each article has a `kind`:
+real-paraphrase, buried-cause (the cause in the last paragraph of a long recap), multiple-causes,
+attributed-by-analysts and explicit-cause should be accepted; recap-no-cause, hedged-speculation,
+despite, wrong-date, wrong-ticker, wrong-direction, cause-after-window, no-move-described and
+prompt-injection should not. A CI fixture check requires unique ids, a label on every article,
+sources for every non-synthetic article, and both labels in every group.
+
 ## Live article-level scoring
 
 CI uses fixtures and mocks. To run the same JEV question and Claude extraction prompts with live
@@ -45,6 +58,12 @@ services, export `TYPESAFE_API_KEY` and `ANTHROPIC_API_KEY`, then run from `api/
 ```sh
 EVENTALPHA_RUN_LIVE_MOVE_EVAL=1 ./gradlew test --rerun-tasks --tests '*LiveMoveModelEvalTest'
 ```
+
+`EVENTALPHA_LIVE_EVAL_RUNS=3` repeats every JEV judgment (and Claude extraction) to expose
+variance. The report gives JEV-level precision and recall, what users would see (a cause is shown
+only when JEV accepts and Claude grounds a reason), misses by kind, verdicts that flip between
+runs, and articles within 0.15 of the threshold. Both prompt variants run: direction only, and with
+the measured return; assertions apply to the variant production uses.
 
 The eval runs the same articles and prompts with direction alone and with the measured return and
 actual candle close times. The JUnit XML under `api/build/test-results/test/` records model IDs,
