@@ -15,6 +15,17 @@ class CauseSummarizerTest {
     }
 
     @Test
+    void matchesAcrossWhitespaceAndTypographicQuoteDifferences() {
+        var reason = new CauseSummarizer.CauseReason("the tariff delay", "The agency's statement said \"tariffs were delayed.\"");
+        assertThat(CauseSummarizer.supportedReason(reason, "The agency’s statement\n said “tariffs\u00a0were delayed.”"))
+                .contains("the tariff delay");
+        assertThat(CauseSummarizer.supportedReason(reason, "The agency’s statement said “tariffs were cancelled.”"))
+                .isEmpty();
+        assertThat(CauseSummarizer.supportedReason(new CauseSummarizer.CauseReason("the tariff delay", "\u00a0"),
+                "Chip stocks rose.")).isEmpty();
+    }
+
+    @Test
     void buildsAStructuredRequestWithTheArticleAsData() {
         // build() validates CauseReason's derived JSON schema against what structured outputs accept.
         var params = CauseSummarizer.params("claude-haiku-5-5", "SPY", "rose", "Chip stocks rally. Tariffs delayed.").rawParams();

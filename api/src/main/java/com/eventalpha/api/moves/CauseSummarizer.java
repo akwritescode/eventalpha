@@ -11,6 +11,7 @@ import com.anthropic.models.messages.StructuredOutputConfig;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,6 +26,7 @@ import org.springframework.stereotype.Component;
 class CauseSummarizer {
 
     private static final Logger log = LoggerFactory.getLogger(CauseSummarizer.class);
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS);
 
     private static final String SYSTEM = """
             You read a news article about a stock price move and state the cause the article gives for it, \
@@ -80,12 +82,18 @@ class CauseSummarizer {
     }
 
     static Optional<String> supportedReason(CauseReason candidate, String article) {
-        if (candidate.reason() == null || candidate.reason().isBlank()
-                || candidate.excerpt() == null || candidate.excerpt().isBlank()) return Optional.empty();
-        if (!article.contains(candidate.excerpt().strip())) {
+        if (candidate.reason() == null || candidate.reason().isBlank() || candidate.excerpt() == null) return Optional.empty();
+        String excerpt = normalizeExcerpt(candidate.excerpt());
+        if (excerpt.isEmpty()) return Optional.empty();
+        if (!normalizeExcerpt(article).contains(excerpt)) {
             log.debug("Discarded cause summary because its supporting excerpt did not match the article");
             return Optional.empty();
         }
         return Optional.of(candidate.reason().strip().replaceAll("[.\\s]+$", "")).filter(r -> !r.isBlank());
+    }
+
+    private static String normalizeExcerpt(String text) {
+        return WHITESPACE.matcher(text.replace('‘', '\'').replace('’', '\'').replace('“', '"').replace('”', '"'))
+                .replaceAll(" ").strip();
     }
 }

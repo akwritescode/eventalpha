@@ -46,8 +46,8 @@ requests carry UTC timestamps.
 The summary reads the window's minute path alongside the evidence. A verified company catalyst comes
 first. Otherwise JEV reads the titles and bodies of up to three candidate articles from the window and
 the preceding three trading days. It judges whether each article explains the requested ticker, direction,
-and window. At 0.6 or above, Claude extracts a reason and a supporting excerpt that must appear in the
-article before the result is labeled a possible cause. Verdicts are cached in Redis per article version
+and window in Eastern time. At 0.6 or above, Claude extracts a reason and a supporting excerpt that
+must match the article after normalizing whitespace and quotation marks. Verdicts are cached in Redis per article version
 and target move. Economic calendar entries and leading or lagging sectors provide context. Alembic
 backfills standard Eastern times for recognized legacy FRED releases. Date-only entries with no
 known time remain on the calendar and are omitted from intraday explanations.

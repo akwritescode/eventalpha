@@ -3,6 +3,8 @@ package com.eventalpha.api.moves;
 import com.eventalpha.api.moves.JevClient.Direction;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executors;
@@ -27,6 +29,8 @@ public class MoveCauses {
     private static final int MAX_CHARS = 6000;
     private static final Duration CACHE_TTL = Duration.ofDays(14);
     private static final String SEPARATOR = "\u001f";
+    private static final DateTimeFormatter EASTERN = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+            .withZone(ZoneId.of("America/New_York"));
 
     public record Candidate(String evidenceId, String title, String body, String contentHash) {}
 
@@ -67,7 +71,7 @@ public class MoveCauses {
     }
 
     private Cause judgeOne(String ticker, String windowMove, Direction direction, Candidate c) {
-        String key = "eventalpha:move-cause:v2:" + c.evidenceId() + ":" + c.contentHash() + ":" + ticker + " " + windowMove;
+        String key = "eventalpha:move-cause:v3:" + c.evidenceId() + ":" + c.contentHash() + ":" + ticker + " " + windowMove;
         String cached = cacheGet(key);
         double p;
         String reason;
@@ -94,7 +98,7 @@ public class MoveCauses {
     }
 
     static String describeMove(Instant start, Instant end, Direction direction) {
-        return move(direction) + " between " + start + " and " + end;
+        return move(direction) + " between " + EASTERN.format(start) + " and " + EASTERN.format(end) + " (Eastern time)";
     }
 
     static String text(Candidate c) {

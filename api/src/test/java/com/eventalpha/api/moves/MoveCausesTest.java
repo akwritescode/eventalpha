@@ -96,4 +96,13 @@ class MoveCausesTest {
         assertThat((String) q.get("instructions")).contains("price decline").contains("not just the size of the move");
         assertThat(q.get("criteria")).asString().contains("only reports that prices moved");
     }
+
+    @Test
+    void moveWindowUsesEasternOffsetsAtBothEndpoints() {
+        assertThat(MoveCauses.describeMove(START, END, Direction.UP))
+                .isEqualTo("rose between 2026-11-25T12:00:00-05:00 and 2026-11-25T14:00:00-05:00 (Eastern time)");
+        assertThat(MoveCauses.describeMove(Instant.parse("2026-07-20T16:00:00Z"),
+                Instant.parse("2026-07-20T18:00:00Z"), Direction.DOWN))
+                .isEqualTo("fell between 2026-07-20T12:00:00-04:00 and 2026-07-20T14:00:00-04:00 (Eastern time)");
+    }
 }

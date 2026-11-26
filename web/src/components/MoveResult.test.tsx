@@ -54,7 +54,11 @@ it('hides the web section when the provider is disabled', () => {
 it('renders web citations only for HTTP and HTTPS URLs', () => {
   render(<MoveResult result={base} web={{ status: 'done', answer: {
     answer: 'Attributed news coverage.', available: true,
-    sources: [{ title: 'Report', url: 'https://example.com/report' }, { title: 'Unsafe', url: 'javascript:alert(1)' }],
+    sources: [
+      { title: 'Report', url: 'https://example.com/report' },
+      // eslint-disable-next-line no-script-url -- Intentional unsafe citation to exercise the URL filter.
+      { title: 'Unsafe', url: 'javascript:alert(1)' },
+    ],
   } }} />);
   expect(screen.getByRole('link', { name: 'Report' })).toHaveAttribute('href', 'https://example.com/report');
   expect(screen.queryByRole('link', { name: 'Unsafe' })).not.toBeInTheDocument();
