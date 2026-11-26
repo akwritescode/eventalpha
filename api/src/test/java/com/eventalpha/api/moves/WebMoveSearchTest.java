@@ -36,6 +36,8 @@ class WebMoveSearchTest {
                 .answer()).isNull();
         assertThat(WebMoveSearch.parse(List.of(cited("NONE", "https://example.com/a", "Recap"))).answer()).isNull();
         assertThat(WebMoveSearch.parse(List.of(plain("Stocks rose because of the Fed."))).answer()).isNull(); // no citation
+        assertThat(WebMoveSearch.parse(List.of(cited("Stocks rose because of the Fed.", "file:///tmp/report", "Report")))
+                .answer()).isNull();
     }
 
     @Test

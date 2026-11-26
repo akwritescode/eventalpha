@@ -1,0 +1,79 @@
+[
+  {
+    "id": "nvda-h20-export-controls",
+    "question": "What was a plausible catalyst for NVDA's after-hours decline on April 15, 2025?",
+    "ticker": "NVDA",
+    "start": "2025-04-15T17:20:00-04:00",
+    "end": "2025-04-15T17:35:00-04:00",
+    "asOf": "2025-04-15T17:35:00-04:00",
+    "expected": "catalyst",
+    "expectedEvidenceUrls": [
+      "https://www.sec.gov/Archives/edgar/data/1045810/000104581025000082/nvda-20250409.htm"
+    ],
+    "rationale": "EDGAR accepted NVIDIA\u2019s real 8-K at 5:22:59 p.m. Eastern. It disclosed new H20 export licensing requirements and up to about $5.5 billion in charges. This is the expected plausible catalyst. The repository\u2019s replay fixture models timely ingestion and discovery using synthetic observation times and X posts."
+  },
+  {
+    "id": "spy-noon-rebound",
+    "question": "Why did SPY rise between noon and 2 p.m. Eastern on November 25?",
+    "ticker": "SPY",
+    "start": "2026-11-25T12:00:00-05:00",
+    "end": "2026-11-25T14:00:00-05:00",
+    "asOf": "2026-11-25T17:42:29-05:00",
+    "expected": "abstain",
+    "rationale": "Coverage and sector returns describe the recovery. Neither identifies a verified trigger for this window."
+  },
+  {
+    "id": "spy-wider-window",
+    "question": "Why was SPY up between 10:55 a.m. and 3:41 p.m. Eastern?",
+    "ticker": "SPY",
+    "start": "2026-11-25T10:55:00-05:00",
+    "end": "2026-11-25T15:41:00-05:00",
+    "asOf": "2026-11-25T17:42:29-05:00",
+    "expected": "abstain",
+    "rationale": "SPY's +2.13% and SMH's +4.46% describe window returns. The evidence reviewed does not establish a cause."
+  },
+  {
+    "id": "spy-nov25-11-to-2",
+    "question": "Why did SPY rise between 11 a.m. and 2 p.m. Eastern on November 25?",
+    "ticker": "SPY",
+    "start": "2026-11-25T11:00:00-05:00",
+    "end": "2026-11-25T14:00:00-05:00",
+    "asOf": "2026-11-25T17:42:29-05:00",
+    "expected": "abstain",
+    "rationale": "Warehouse posts were absent in the reported result. Search recaps describe a rebound and improving breadth without identifying a trigger for the selected rise.",
+    "articleJudgments": [
+      {
+        "id": "ap-afternoon-recap",
+        "url": "https://apnews.com/article/10044b4fb55d3ff20fde9ba9e9acaab1",
+        "text": "Stock indexes pared early losses in the afternoon as AI-stock losses eased. By 3:07 p.m. the S&P 500 was down 0.3% after falling as much as 3.2%. About three quarters of its constituents were up.",
+        "explainsMove": false
+      },
+      {
+        "id": "spxset-midday-recap",
+        "url": "https://www.spxset.com/folio/spx-midday-pulse-2026-11-25",
+        "text": "The S&P 500 recovered from its morning low and was still down around 1.6% at midday. Chip and tech stocks lagged while the equal-weight index was slightly positive.",
+        "explainsMove": false
+      },
+      {
+        "id": "synthetic-explicit-attribution",
+        "synthetic": true,
+        "text": "SPY rose between 11 a.m. and 2 p.m. Eastern on November 25, 2026. Traders explicitly attributed the late-morning gain in SPY to the Commerce Department announcing at 11:15 a.m. that it would delay a planned tariff increase.",
+        "explainsMove": true
+      }
+    ]
+  },
+  {
+    "id": "spy-nov25-830-to-2",
+    "question": "What explains SPY's morning dip and recovery from 8:30 a.m. to 2 p.m. Eastern on November 25?",
+    "ticker": "SPY",
+    "start": "2026-11-25T08:30:00-05:00",
+    "end": "2026-11-25T14:00:00-05:00",
+    "asOf": "2026-11-25T17:42:29-05:00",
+    "expected": "abstain",
+    "requiredContextIds": [
+      "release:fred:53|2026-11-25",
+      "release:fred:54|2026-11-25"
+    ],
+    "rationale": "Check both legs independently. GDP and PCE releases are morning context. If sourced reporting explicitly links the morning selloff to PCE, it is a possible contributor to the dip. Dip buying after heavy selling is an acceptable hypothesis for the rebound, with order-flow or sourced attribution needed for a stronger claim. The abstention label covers the window-level verified catalyst field on the current warehouse evidence."
+  }
+]

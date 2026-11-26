@@ -296,6 +296,40 @@ def test_minute_partition_migration_preserves_existing_candles(engine: Engine):
             os.environ["EVENTALPHA_DATABASE_URL"] = old
 
 
+def test_fred_release_backfill_preserves_unknown_and_existing_times(engine: Engine, monkeypatch):
+    from alembic import command
+    from alembic.config import Config
+
+    monkeypatch.setenv("EVENTALPHA_DATABASE_URL", engine.url.render_as_string(hide_password=False))
+    config = Config("alembic.ini")
+    command.downgrade(config, "d2f4a6b8c0e1")
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+            INSERT INTO econ_events (source, event_key, title, event_date, scheduled_at, importance, fetched_at)
+            VALUES ('fred', 'pce', 'Personal Income and Outlays', '2025-06-27', NULL, 'high', '2025-06-26 12:00+00'),
+                   ('fred', 'adp', 'ADP National Employment Report', '2025-12-03', NULL, 'medium', '2025-12-02 12:00+00'),
+                   ('fred', 'unknown', 'Unknown release', '2025-06-27', NULL, 'high', '2025-06-26 12:00+00'),
+                   ('fred', 'existing', 'Gross Domestic Product', '2025-06-26', '2025-06-26 13:00+00', 'high',
+                    '2025-06-25 12:00+00'),
+                   ('bls', 'different-source', 'Personal Income and Outlays', '2025-06-27', NULL, 'high',
+                    '2025-06-26 12:00+00')
+        """)
+        )
+    command.upgrade(config, "head")
+    with engine.connect() as conn:
+        rows = {
+            row.event_key: row
+            for row in conn.execute(text("SELECT event_key, scheduled_at, fetched_at FROM econ_events"))
+        }
+    assert rows["pce"].scheduled_at == datetime(2025, 6, 27, 12, 30, tzinfo=UTC)
+    assert rows["pce"].fetched_at == datetime(2025, 6, 26, 12, tzinfo=UTC)
+    assert rows["adp"].scheduled_at == datetime(2025, 12, 3, 13, 15, tzinfo=UTC)
+    assert rows["existing"].scheduled_at == datetime(2025, 6, 26, 13, tzinfo=UTC)
+    assert rows["unknown"].scheduled_at is None
+    assert rows["different-source"].scheduled_at is None
+
+
 def test_collection_universe_uses_reviewed_snapshot_without_network(engine: Engine, monkeypatch):
     from pathlib import Path
 

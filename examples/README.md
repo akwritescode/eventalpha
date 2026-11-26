@@ -44,21 +44,15 @@ and S&P 500 membership plus benchmarks. Custom-range pickers use the browser's t
 requests carry UTC timestamps.
 
 The summary reads the window's minute path alongside the evidence. A verified company catalyst comes
-first. Otherwise an economic release inside the window, or one before it that prices hadn't reacted to
-yet (an 08:30 release before the open), is named as the likely driver, and a drop or spike that reversed
-is described as such ("SPY fell 2.9% after the 8:30 AM GDP and PCE releases, bottoming at 11:15 AM,
-then reversed…"). Before that, when no verified catalyst exists, up to three articles from the window
-or the 3 trading days before it go to JEV (title and body) with one yes/no question: does the article name what
-caused this rise or decline? At 0.6 or above the summary says "possibly due to …", with the cause
-Claude Haiku summarizes from the article (`TYPESAFE_API_KEY`, `EVENTALPHA_EXPLAIN_MODEL`; verdicts are
-cached in Redis per article version and direction). With no news in the window, the latest release in the 3 trading days before it (from the exchange calendar,
-so a Monday window reaches back through Wednesday) is used, and the
-window's move is called a continuation or a reversal of the move that followed it. Index ETFs (SPY,
-QQQ, DIA) also name their leading and lagging sector ETFs. Headlines that only report a price move
-("Chip stocks rally", "S&P 500 slides at midday") are labelled market commentary and are never promoted
-on their materiality score; only JEV reading the body can make one a cause.
+first. Otherwise JEV reads the titles and bodies of up to three candidate articles from the window and
+the preceding three trading days. It judges whether each article explains the requested ticker, direction,
+and window. At 0.6 or above, Claude extracts a reason and a supporting excerpt that must appear in the
+article before the result is labeled a possible cause. Verdicts are cached in Redis per article version
+and target move. Economic calendar entries and leading or lagging sectors provide context. Alembic
+backfills standard Eastern times for recognized legacy FRED releases. Date-only entries with no
+known time remain on the calendar and are omitted from intraday explanations.
 
-When none of that finds anything (no catalyst, no article JEV accepts, no release in the lookback), the
+When warehouse evidence provides no catalyst, the
 web app asks `GET /api/v1/tickers/{ticker}/move-web-search`: Claude searches news coverage of the window
 and the answer is shown apart from EventAlpha's evidence, labelled as a web search, with its sources.
 Uncited answers are dropped, replays never search, and results are cached for a day and limited to

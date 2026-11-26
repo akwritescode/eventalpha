@@ -43,16 +43,13 @@ class MoveRepository {
     /** How many trading sessions before the window to look for releases and articles that may explain it. */
     static final int LOOKBACK_TRADING_DAYS = 3;
 
-    // Scheduled releases have a time (BLS calendar, FOMC 14:00, FRED releases at their agency's
-    // fixed time); 08:30 ET is the fallback for any row loaded before those times were recorded.
+    // A date-only calendar entry has no reliable intraday placement.
     private static final String RELEASES = """
-            SELECT source, event_key, title, importance, at FROM (
-                SELECT source, event_key, title, importance,
-                       coalesce(scheduled_at, (event_date + time '08:30') AT TIME ZONE 'America/New_York') AS at
-                FROM econ_events WHERE importance IN ('high', 'medium')
-            ) e
-            WHERE at BETWEEN :from AND :to AND at <= :cutoff
-            ORDER BY at, title
+            SELECT source, event_key, title, importance, scheduled_at AS at, fetched_at
+            FROM econ_events
+            WHERE importance IN ('high', 'medium') AND scheduled_at BETWEEN :from AND :to
+              AND scheduled_at <= :cutoff AND fetched_at <= :cutoff
+            ORDER BY scheduled_at, title
             """;
 
     private static final String PATH = """
@@ -62,20 +59,14 @@ class MoveRepository {
             ORDER BY started_at
             """;
 
-    private static final String PRICE_BEFORE = """
-            SELECT close FROM price_bars_minute
-            WHERE symbol = :symbol AND started_at < :at AND started_at >= :floor
-              AND first_seen_at <= :cutoff AND close > 0
-            ORDER BY started_at DESC LIMIT 1
-            """;
-
-    // Use a single warehouse snapshot. Replays omit articles that have since been edited
-    // because the article store retains only the current version.
+    // Replays omit articles edited after the cutoff because the store retains only the current version.
     private static final String TIMELINE = """
             WITH visible_articles AS (
-                SELECT id, title, url, source, published_at, ingested_at, updated_at, content_hash, body
+                SELECT id, title, url, source, published_at, ingested_at, updated_at, content_hash,
+                       COALESCE(NULLIF(BTRIM(body), ''), summary) AS body,
+                       tickers @> ARRAY[:ticker]::varchar[] AS direct_match
                 FROM articles
-                WHERE tickers @> ARRAY[:ticker]::varchar[]
+                WHERE (tickers @> ARRAY[:ticker]::varchar[] OR (:includeMarketNews AND source = 'rss:federal_reserve'))
                   AND (published_at BETWEEN :contextStart AND :contextEnd OR EXISTS (
                       SELECT 1 FROM x_leads linked WHERE linked.article_id = articles.id
                         AND linked.ticker = :ticker AND linked.article_content_hash = articles.content_hash
@@ -91,12 +82,13 @@ class MoveRepository {
                         THEN score.scored_at ELSE updated_at END AS available_at,
                    CASE WHEN score.materiality >= 2.5 AND score.company_specific >= 0.8
                         THEN score.materiality END AS catalyst_materiality,
-                   a.body, a.content_hash
+                   a.body, a.content_hash, a.direct_match
             FROM visible_articles a
             LEFT JOIN LATERAL (
                 SELECT s.materiality, s.company_specific, s.scored_at
                 FROM article_scores s
-                WHERE (a.source = 'sec_edgar' OR a.source IN ('rss:prnewswire_all', 'rss:prnewswire_earnings'))
+                WHERE a.direct_match
+                  AND (a.source = 'sec_edgar' OR a.source IN ('rss:prnewswire_all', 'rss:prnewswire_earnings'))
                   AND a.published_at <= :windowEnd AND s.article_id = a.id
                   AND s.scored_at BETWEEN a.updated_at AND :cutoff
                 ORDER BY s.scored_at DESC, s.model, s.questions_version
@@ -109,7 +101,7 @@ class MoveRepository {
                    'article:' || a.id,
                    CASE WHEN a.id IS NOT NULL THEN x.verified_at END,
                    CASE WHEN a.id IS NULL THEN x.first_seen_at ELSE GREATEST(x.verified_at, a.updated_at) END, NULL,
-                   NULL, NULL
+                   NULL, NULL, false
             FROM x_leads x
             LEFT JOIN visible_articles a ON a.id = x.article_id AND a.content_hash = x.article_content_hash
                 AND a.published_at <= :cutoff AND a.ingested_at <= :cutoff AND a.updated_at <= :cutoff
@@ -211,12 +203,15 @@ class MoveRepository {
 
     record SectorMovers(List<SectorMove> gainers, List<SectorMove> decliners) {}
 
+    // foundInSources is true only when the warehouse establishes a catalyst candidate. Calendar
+    // context alone must not suppress the frontend's web-search fallback for live requests.
     record Explanation(String ticker, Instant start, Instant end, Instant asOf, String summary,
                        List<Catalyst> catalysts, List<Evidence> timeline, List<PriceMove> priceMoves,
-                       List<String> benchmarks, SectorMovers sectorMovers, boolean foundInSources) {}
+                       List<String> benchmarks, SectorMovers sectorMovers, boolean foundInSources,
+                       List<String> candidateEvidenceIds) {}
 
     private record TimelineRow(Evidence evidence, Instant availableAt, Double catalystMateriality, String body,
-                               String contentHash) {}
+                               String contentHash, boolean directMatch) {}
 
     private record PriceRow(PriceMove move, Instant availableAt) {}
 
@@ -226,6 +221,7 @@ class MoveRepository {
         Instant catalystFloor = start.minus(CONTEXT);
         var rows = jdbc.sql(TIMELINE)
                 .param("ticker", ticker)
+                .param("includeMarketNews", INDEX_ETFS.contains(ticker))
                 .param("contextStart", Timestamp.from(floor))
                 .param("contextEnd", Timestamp.from(end.plus(CONTEXT)))
                 .param("windowEnd", Timestamp.from(end))
@@ -242,7 +238,7 @@ class MoveRepository {
                             Sql.instant(rs, "verified_at"), null);
                     return new TimelineRow(evidence, Sql.instant(rs, "available_at"),
                             commentary ? null : Sql.nullableDouble(rs, "catalyst_materiality"),
-                            rs.getString("body"), rs.getString("content_hash"));
+                            rs.getString("body"), rs.getString("content_hash"), rs.getBoolean("direct_match"));
                 }).list();
 
         List<Evidence> articleTimeline = rows.stream().map(TimelineRow::evidence).toList();
@@ -277,8 +273,9 @@ class MoveRepository {
 
         var releases = releases(floor, end, cutoff, start, end);
         // No verified catalyst: ask JEV whether nearby articles explain the move (title + body).
+        var shortlist = candidates(rows, floor);
         var found = catalysts.isEmpty()
-                ? causes.judge(ticker, direction(ticker, moves), candidates(rows, floor)) : List.<MoveCauses.Cause>of();
+                ? causes.judge(ticker, start, end, direction(ticker, moves), shortlist) : List.<MoveCauses.Cause>of();
         var scores = found.stream().collect(java.util.stream.Collectors.toMap(MoveCauses.Cause::evidenceId,
                 MoveCauses.Cause::probability));
         articleTimeline = articleTimeline.stream().map(e -> scores.containsKey(e.id())
@@ -290,20 +287,19 @@ class MoveRepository {
         var startPrice = moves.stream().filter(move -> move.symbol().equals(ticker)).map(PriceMove::startPrice)
                 .findFirst().orElse(null);
         var path = startPrice == null ? List.<Candle>of() : path(ticker, start, end, cutoff);
-        var latestBefore = releases.stream().map(ReleaseRow::release).filter(r -> r.at().isBefore(start))
-                .map(Release::at).max(Comparator.naturalOrder()).orElse(null);
-        var priceBeforeRelease = latestBefore == null || path.isEmpty() ? null : priceBefore(ticker, latestBefore, cutoff);
         String summary = MoveNarrative.summarize(new MoveNarrative.Input(ticker, start, end, catalysts, found, startPrice,
-                path, releases.stream().map(ReleaseRow::release).toList(), priceBeforeRelease, sectorMovers,
+                path, releases.stream().map(ReleaseRow::release).toList(), sectorMovers,
                 INDEX_ETFS.contains(ticker)));
         if (!found.isEmpty()) {
             catalysts = found.stream().map(c -> new Catalyst(c.reason(), c.evidenceId())).toList();
         }
-        Instant freshness = Stream.concat(rows.stream().map(TimelineRow::availableAt),
-                prices.stream().map(PriceRow::availableAt)).max(Comparator.naturalOrder()).orElse(null);
+        Instant freshness = Stream.concat(Stream.concat(rows.stream().map(TimelineRow::availableAt),
+                        prices.stream().map(PriceRow::availableAt)),
+                releases.stream().map(row -> row.evidence().firstSeenAt())).max(Comparator.naturalOrder()).orElse(null);
         return ApiResponse.of(new Explanation(ticker, start, end, cutoff, summary, catalysts, timeline,
                 moves.stream().filter(move -> move.symbol().equals(ticker) || BENCHMARKS.contains(move.symbol())).toList(),
-                BENCHMARKS, sectorMovers, !catalysts.isEmpty() || !releases.isEmpty()), freshness);
+                BENCHMARKS, sectorMovers, !catalysts.isEmpty(),
+                shortlist.stream().map(MoveCauses.Candidate::evidenceId).toList()), freshness);
     }
 
     private record ReleaseRow(Release release, Evidence evidence) {}
@@ -345,7 +341,9 @@ class MoveRepository {
                         && !r.evidence().publishedAt().isBefore(floor)
                         && (r.evidence().status().equals("original_source") || r.evidence().status().equals("market_commentary")))
                 .sorted(Comparator.comparing((TimelineRow r) -> !r.evidence().timing().equals("during"))
-                        .thenComparing(r -> r.evidence().publishedAt(), Comparator.reverseOrder()))
+                        .thenComparing(TimelineRow::directMatch, Comparator.reverseOrder())
+                        .thenComparing(r -> r.evidence().publishedAt(), Comparator.reverseOrder())
+                        .thenComparing(r -> r.evidence().id()))
                 .limit(MoveCauses.MAX_CANDIDATES)
                 .map(r -> new MoveCauses.Candidate(r.evidence().id(), r.evidence().title(), r.body(), r.contentHash()))
                 .toList();
@@ -369,7 +367,8 @@ class MoveRepository {
                     String timing = at.isBefore(start) ? "before" : at.isAfter(end) ? "after" : "during";
                     var evidence = new Evidence("release:" + rs.getString("source") + ":" + rs.getString("event_key"),
                             "macro", title.equalsIgnoreCase(name) ? title : title + " (" + name + ")",
-                            releaseUrl(rs.getString("source"), rs.getString("event_key"), title), at, at, timing,
+                            releaseUrl(rs.getString("source"), rs.getString("event_key"), title), at,
+                            Sql.instant(rs, "fetched_at"), timing,
                             "economic_release", null, null, null);
                     return new ReleaseRow(new Release(name, at, rs.getString("importance").equals("high")), evidence);
                 }).list();
@@ -405,13 +404,6 @@ class MoveRepository {
         return jdbc.sql(PATH).param("symbol", ticker).param("start", Timestamp.from(start))
                 .param("end", Timestamp.from(end)).param("cutoff", Timestamp.from(cutoff))
                 .query((rs, row) -> new Candle(Sql.instant(rs, "started_at"), rs.getBigDecimal("close"))).list();
-    }
-
-    /** The last price known before a release: what the market's reaction is measured from. */
-    private BigDecimal priceBefore(String ticker, Instant at, Instant cutoff) {
-        return jdbc.sql(PRICE_BEFORE).param("symbol", ticker).param("at", Timestamp.from(at))
-                .param("floor", Timestamp.from(at.minus(Duration.ofDays(10)))).param("cutoff", Timestamp.from(cutoff))
-                .query(BigDecimal.class).optional().orElse(null);
     }
 
     private SectorMovers sectorMovers(String ticker, List<PriceMove> moves) {

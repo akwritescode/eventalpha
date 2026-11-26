@@ -2,6 +2,7 @@ package com.eventalpha.api.moves;
 
 import com.eventalpha.api.moves.JevClient.Direction;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executors;
@@ -13,8 +14,8 @@ import org.springframework.stereotype.Component;
 /**
  * Decides which candidate articles explain a move: JEV judges title + body (not the title alone),
  * and only articles at or above {@link #THRESHOLD} count. For those, Claude writes the reason;
- * without Claude the reason falls back to the article's title. Verdicts are cached in Redis per
- * article version and direction, so repeated requests don't call either model again.
+ * a candidate is promoted only when Claude extracts a reason. Verdicts are cached per article
+ * version and move window.
  */
 @Component
 public class MoveCauses {
@@ -47,11 +48,12 @@ public class MoveCauses {
     }
 
     /** Causes found among the candidates, highest probability first. Never throws. */
-    public List<Cause> judge(String ticker, Direction direction, List<Candidate> candidates) {
+    public List<Cause> judge(String ticker, Instant start, Instant end, Direction direction, List<Candidate> candidates) {
         if (!jev.available() || candidates.isEmpty()) return List.of();
+        String windowMove = describeMove(start, end, direction);
         try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
             var futures = candidates.stream().limit(MAX_CANDIDATES)
-                    .map(c -> pool.submit(() -> judgeOne(ticker, direction, c))).toList();
+                    .map(c -> pool.submit(() -> judgeOne(ticker, windowMove, direction, c))).toList();
             return futures.stream().map(f -> {
                         try {
                             return f.get();
@@ -64,8 +66,8 @@ public class MoveCauses {
         }
     }
 
-    private Cause judgeOne(String ticker, Direction direction, Candidate c) {
-        String key = "eventalpha:move-cause:v1:" + c.evidenceId() + ":" + c.contentHash() + ":" + direction;
+    private Cause judgeOne(String ticker, String windowMove, Direction direction, Candidate c) {
+        String key = "eventalpha:move-cause:v2:" + c.evidenceId() + ":" + c.contentHash() + ":" + ticker + " " + windowMove;
         String cached = cacheGet(key);
         double p;
         String reason;
@@ -75,14 +77,24 @@ public class MoveCauses {
             reason = parts.length > 1 ? parts[1] : "";
         } else {
             String text = text(c);
-            var judged = jev.explainsMove(text, direction);
+            var judged = jev.explainsMove(judgeInput(ticker, windowMove, text), direction);
             if (judged.isEmpty()) return null; // not cached: try again next time
             p = judged.getAsDouble();
-            reason = p >= THRESHOLD ? summarizer.reason(ticker, move(direction), text).orElse("") : "";
+            if (!Double.isFinite(p) || p < 0 || p > 1) return null;
+            reason = p >= THRESHOLD ? summarizer.reason(ticker, windowMove, text).orElse("") : "";
+            if (p >= THRESHOLD && reason.isBlank()) return null;
             cachePut(key, p + SEPARATOR + reason);
         }
-        if (p < THRESHOLD) return null;
-        return new Cause(c.evidenceId(), c.title(), reason.isBlank() ? "the cause reported in “" + c.title() + "”" : reason, p);
+        if (p < THRESHOLD || reason.isBlank()) return null;
+        return new Cause(c.evidenceId(), c.title(), reason, p);
+    }
+
+    static String judgeInput(String ticker, String windowMove, String article) {
+        return "Target move: " + ticker + " " + windowMove + "\n\nArticle:\n" + article;
+    }
+
+    static String describeMove(Instant start, Instant end, Direction direction) {
+        return move(direction) + " between " + start + " and " + end;
     }
 
     static String text(Candidate c) {

@@ -94,14 +94,20 @@ export function MoveChat() {
     setTurns(t => t.map(turn => (turn.id === replyId ? { id: replyId, role: 'assistant' as const, ...reply } : turn)));
     setBusy(false);
     setSaveTick(n => n + 1);
-    if (reply.web?.status === 'loading' && reply.result) searchWeb(replyId, reply.result);
+    if (reply.web?.status === 'loading' && reply.result) searchWeb(conversationId, replyId, reply.result);
   }
 
   /** EventAlpha's sources found nothing: ask a web search, then fill in the same reply. */
-  function searchWeb(replyId: number, result: Explanation) {
+  function searchWeb(originId: string, replyId: number, result: Explanation) {
     const settle = (answer: WebAnswer) => {
-      setTurns(t => t.map(turn => (turn.id === replyId && turn.role === 'assistant'
-        ? { ...turn, web: { status: 'done' as const, answer } } : turn)));
+      const withAnswer = (all: Turn[]) => all.map(turn => (turn.id === replyId && turn.role === 'assistant'
+        ? { ...turn, web: { status: 'done' as const, answer } } : turn));
+      if (latest.current.conversationId !== originId) {
+        const origin = loadConversations().find(c => c.id === originId);
+        if (origin) setConversations(saveConversation({ ...origin, turns: withAnswer(origin.turns) }));
+        return;
+      }
+      setTurns(withAnswer);
       setSaveTick(n => n + 1);
     };
     fetchWebSearch(result.ticker, { start: result.start, end: result.end })

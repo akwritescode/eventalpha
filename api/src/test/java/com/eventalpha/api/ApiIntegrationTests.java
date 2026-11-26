@@ -276,6 +276,17 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.data.timeline[1].status").value("verified_discovery"))
                 .andExpect(jsonPath("$.data.catalysts", hasSize(1)));
 
+        mvc.perform(get(path).param("start", start).param("end", end).param("asOf", end))
+                .andExpect(status().isOk())
+                .andExpect(result -> {
+                    var body = JsonPath.parse(result.getResponse().getContentAsString());
+                    assertThat(body.<String>read("$.data.timeline[0].url")).isEqualTo(
+                            "https://www.sec.gov/Archives/edgar/data/1045810/000104581025000082/nvda-20250409.htm");
+                    String filing = body.read("$.data.timeline[0].id");
+                    assertThat(body.<List<String>>read("$.data.candidateEvidenceIds")).contains(filing);
+                    assertThat(body.<String>read("$.data.catalysts[0].evidenceId")).isEqualTo(filing);
+                });
+
         mvc.perform(get(path).param("start", start).param("end", "2025-04-15T17:22:00-04:00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.timeline[0].timing").value("after"))
@@ -427,8 +438,7 @@ class ApiIntegrationTests {
                 INSERT INTO articles (id, source, source_id, url, title, body, tickers, published_at, content_hash)
                 VALUES (9001, 'rss:prnewswire_all', 'test-chip-rally', 'https://example.com/chips',
                         'Chip stocks rally as semiconductor ETF jumps 4% at midday',
-                        'Semiconductor shares rebounded after the Commerce Department said it would delay the proposed '
-                        || 'chip tariffs announced this morning.', '{SPY,SMH}', '2026-11-25 12:30-05', 'chip-rally')
+                        'Semiconductor shares rebounded in midday trading.', '{SPY,SMH}', '2026-11-25 12:30-05', 'chip-rally')
                 """).update();
         jdbc.sql("""
                 INSERT INTO article_scores (article_id, model, questions_version, sentiment, p_bullish, p_bearish,
@@ -441,7 +451,7 @@ class ApiIntegrationTests {
 
     @Test
     @org.springframework.transaction.annotation.Transactional
-    void noonToTwoRallyIsAReversalOfTheReleaseSellOffNotTheRallyArticle() throws Exception {
+    void noonToTwoRallyAbstainsWhenOnlyCalendarAndCommentaryAreAvailable() throws Exception {
         loadNov25();
         mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
                         .param("start", "2026-11-25T12:00:00-05:00")
@@ -449,14 +459,13 @@ class ApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
                 .andExpect(jsonPath("$.data.summary").value(
-                        "No news in EventAlpha's sources during this window. SPY had fallen 2.4% after the 8:30 AM "
-                                + "GDP and PCE releases before this window, then reversed, rising 2.1%: likely dip buying "
-                                + "after the release-driven sell-off. Leading sectors: Semiconductors +3.3%, "
-                                + "Technology +2.6%; lagging: Utilities -0.4%."))
+                        "No verified catalyst found for this move. Economic calendar: the 8:30 AM GDP and PCE releases. "
+                                + "Leading sectors: Semiconductors +3.3%, Technology +2.6%; lagging: Utilities -0.4%."))
                 .andExpect(jsonPath("$.data.summary").value(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("Chip stocks rally"))))
                 // The title alone decides nothing: the article still went to JEV (which said no here).
                 .andDo(result -> org.mockito.Mockito.verify(causes).judge(org.mockito.ArgumentMatchers.eq("SPY"),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.argThat(list -> list.stream()
                                 .anyMatch(c -> c.evidenceId().equals("article:9001")))))
                 .andExpect(jsonPath("$.data.timeline[?(@.id == 'article:9001')].status").value("market_commentary"))
@@ -471,9 +480,80 @@ class ApiIntegrationTests {
 
     @Test
     @org.springframework.transaction.annotation.Transactional
+    void wideningTheReboundWindowIncludesPreOpenMacroContextWithoutInventingACause() throws Exception {
+        loadNov25();
+        String endpoint = "/api/v1/tickers/SPY/move-explanation";
+        String end = "2026-11-25T14:00:00-05:00";
+        mvc.perform(get(endpoint).param("start", "2026-11-25T11:00:00-05:00").param("end", end))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
+                .andExpect(jsonPath("$.data.timeline[?(@.id == 'release:fred:54|2026-11-25')].timing").value("before"));
+        mvc.perform(get(endpoint).param("start", "2026-11-25T08:30:00-05:00").param("end", end))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
+                .andExpect(jsonPath("$.data.timeline[?(@.id == 'release:fred:54|2026-11-25')].timing").value("during"))
+                .andExpect(jsonPath("$.data.summary").value(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("then reversed"),
+                        org.hamcrest.Matchers.containsString("No verified catalyst found"),
+                        org.hamcrest.Matchers.containsString("GDP and PCE"))));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void indexRetrievalShortlistsUntaggedFedNewsWithoutPromotingItToACatalyst() throws Exception {
+        jdbc.sql("""
+                INSERT INTO articles (id, source, source_id, url, title, summary, tickers, published_at,
+                                      ingested_at, updated_at, content_hash)
+                VALUES (9002, 'rss:federal_reserve', 'test-fed-index', 'https://example.com/fed', 'Fed statement',
+                        'The Fed changed its policy rate.', '{}', '2025-06-10 10:01-04', '2025-06-10 10:02-04',
+                        '2025-06-10 10:02-04', 'fed-index'),
+                       (9003, 'rss:federal_reserve', 'test-fed-late', 'https://example.com/fed-late', 'Late Fed statement',
+                        'Another Fed statement.', '{}', '2025-06-10 10:03-04', '2025-06-10 10:40-04',
+                        '2025-06-10 10:40-04', 'fed-late')
+                """).update();
+        mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
+                        .param("start", "2025-06-10T10:00:00-04:00").param("end", "2025-06-10T10:30:00-04:00")
+                        .param("asOf", "2025-06-10T10:30:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.candidateEvidenceIds[*]").value(org.hamcrest.Matchers.contains("article:9002")))
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
+                .andDo(result -> org.mockito.Mockito.verify(causes).judge(org.mockito.ArgumentMatchers.eq("SPY"),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.argThat(items -> items.size() == 1
+                                && items.getFirst().body().equals("The Fed changed its policy rate."))));
+        mvc.perform(get("/api/v1/tickers/NVDA/move-explanation")
+                        .param("start", "2025-06-10T10:00:00-04:00").param("end", "2025-06-10T10:30:00-04:00")
+                        .param("asOf", "2025-06-10T10:30:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.candidateEvidenceIds", hasSize(0)));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void aReplayOmitsCalendarRowsFetchedAfterItsCutoff() throws Exception {
+        loadNov25();
+        jdbc.sql("UPDATE econ_events SET fetched_at = '2026-11-25 08:00-05' WHERE event_key = '53|2026-11-25'").update();
+        jdbc.sql("UPDATE econ_events SET fetched_at = '2026-11-25 14:01-05' WHERE event_key = '54|2026-11-25'").update();
+        mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
+                        .param("start", "2026-11-25T12:00:00-05:00").param("end", "2026-11-25T14:00:00-05:00")
+                        .param("asOf", "2026-11-25T14:00:00-05:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timeline[?(@.id == 'release:fred:53|2026-11-25')].firstSeenAt")
+                        .value("2026-11-25T13:00:00Z"))
+                .andExpect(jsonPath("$.data.timeline[?(@.id == 'release:fred:54|2026-11-25')]").isEmpty());
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
     void theRallyArticleIsJudgedOnItsBodyAndQuotedWhenJevAccepts() throws Exception {
         loadNov25();
+        jdbc.sql("""
+                UPDATE articles SET body = 'SPY rebounded after the Commerce Department said at noon it would '
+                    || 'delay the proposed chip tariffs.', content_hash = 'test-spy-tariff-delay'
+                WHERE id = 9001
+                """).update();
         org.mockito.Mockito.when(causes.judge(org.mockito.ArgumentMatchers.eq("SPY"),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.eq(com.eventalpha.api.moves.JevClient.Direction.UP),
                         org.mockito.ArgumentMatchers.argThat(list -> list.stream().anyMatch(c -> c.evidenceId().equals(
                                 "article:9001") && c.body().contains("delay the proposed chip tariffs")))))
@@ -518,9 +598,8 @@ class ApiIntegrationTests {
                         .param("start", "2026-11-16T10:00:00-05:00")
                         .param("end", "2026-11-16T11:00:00-05:00"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.summary").value("No news in EventAlpha's sources during this window. SPY had "
-                        + "fallen 2.0% after the Nov 12, 8:30 AM CPI release before this window, then reversed, rising "
-                        + "1.0%: likely dip buying after the release-driven sell-off."))
+                .andExpect(jsonPath("$.data.summary").value(
+                        "No verified catalyst found for this move. Economic calendar: the Nov 12, 8:30 AM CPI release."))
                 .andExpect(jsonPath("$.data.timeline[?(@.status == 'economic_release')].title")
                         .value(org.hamcrest.Matchers.contains("Consumer Price Index (CPI)")));
     }
@@ -531,7 +610,7 @@ class ApiIntegrationTests {
         loadNov25();
         mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
                         .param("start", "2026-11-25T12:00:00-05:00").param("end", "2026-11-25T14:00:00-05:00"))
-                .andExpect(jsonPath("$.data.foundInSources").value(true)); // the 08:30 releases count
+                .andExpect(jsonPath("$.data.foundInSources").value(false)); // calendar entries do not establish a cause
         mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
                         .param("start", "2025-06-10T12:00:00-04:00").param("end", "2025-06-10T12:30:00-04:00"))
                 .andExpect(jsonPath("$.data.foundInSources").value(false));
@@ -557,7 +636,7 @@ class ApiIntegrationTests {
 
     @Test
     @org.springframework.transaction.annotation.Transactional
-    void nineToTwoNamesThePreOpenReleaseForTheDropAndThenTheReversal() throws Exception {
+    void nineToTwoShowsTheReversalAndThePreOpenCalendarContext() throws Exception {
         loadNov25();
         mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
                         .param("start", "2026-11-25T09:00:00-05:00")
@@ -565,9 +644,9 @@ class ApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
                 .andExpect(jsonPath("$.data.summary").value(org.hamcrest.Matchers.startsWith(
-                        "SPY fell 2.9% after the 8:30 AM GDP and PCE releases, bottoming at 11:15 AM, then reversed, "
-                                + "rising 2.6% off the low to end -0.3% for the window. "
-                                + "EventAlpha found no news behind the rebound.")));
+                        "SPY fell 2.9% to a 11:15 AM low, then reversed to end -0.3% for the window. "
+                                + "No verified catalyst found in EventAlpha's sources. Economic calendar: "
+                                + "the 8:30 AM GDP and PCE releases.")));
     }
 
     @Test

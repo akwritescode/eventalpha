@@ -23,9 +23,9 @@ class MoveNarrativeTest {
     }
 
     private static Input input(String start, String end, List<Catalyst> catalysts, String startPrice, List<Candle> path,
-                               List<Release> releases, String priceBeforeRelease) {
+                               List<Release> releases) {
         return new Input("SPY", et(start), et(end), catalysts, List.of(), new BigDecimal(startPrice), path, releases,
-                priceBeforeRelease == null ? null : new BigDecimal(priceBeforeRelease), null, false);
+                null, false);
     }
 
     private static final Release CPI = new Release("CPI", et("2026-11-25T10:00:00"), true);
@@ -34,44 +34,42 @@ class MoveNarrativeTest {
     void aVerifiedCatalystWinsOverReleasesAndPricePath() {
         var text = MoveNarrative.summarize(input("2026-11-25T09:30:00", "2026-11-25T11:00:00",
                 List.of(new Catalyst("Acme 8-K: CEO departs", "article:1")), "100",
-                List.of(c("2026-11-25T10:59:00", "95")), List.of(CPI), null));
+                List.of(c("2026-11-25T10:59:00", "95")), List.of(CPI)));
         assertThat(text).isEqualTo("Plausible catalyst — Acme 8-K: CEO departs. The timing supports a possible link.");
     }
 
     @Test
-    void aReleaseInsideTheWindowIsTheLikelyDriverOfAOneWayMove() {
+    void aReleaseInsideTheWindowIsCalendarContext() {
         var text = MoveNarrative.summarize(input("2026-11-25T09:30:00", "2026-11-25T11:00:00", List.of(), "100",
                 List.of(c("2026-11-25T09:45:00", "100.1"), c("2026-11-25T10:30:00", "101"), c("2026-11-25T10:59:00", "101.5")),
-                List.of(CPI), null));
-        assertThat(text).isEqualTo("SPY rose 1.5% after the 10:00 AM CPI release, the likely driver: no company news "
-                + "in EventAlpha's sources.");
+                List.of(CPI)));
+        assertThat(text).isEqualTo("No verified catalyst found for this move. Economic calendar: the 10:00 AM CPI release.");
     }
 
     @Test
     void aRallyThatFadesAfterAReleaseIsDescribedAsAReversal() {
         var text = MoveNarrative.summarize(input("2026-11-25T09:30:00", "2026-11-25T12:00:00", List.of(), "100",
-                List.of(c("2026-11-25T10:05:00", "102"), c("2026-11-25T11:59:00", "100.5")), List.of(CPI), null));
-        assertThat(text).isEqualTo("SPY rose 2.0% after the 10:00 AM CPI release, peaking at 10:05 AM, then reversed, "
-                + "falling 1.5% off the high to end +0.5% for the window. EventAlpha found no news behind the pullback.");
+                List.of(c("2026-11-25T10:05:00", "102"), c("2026-11-25T11:59:00", "100.5")), List.of(CPI)));
+        assertThat(text).isEqualTo("SPY rose 2.0% to a 10:05 AM high, then reversed to end +0.5% for the window. "
+                + "No verified catalyst found in EventAlpha's sources. Economic calendar: the 10:00 AM CPI release.");
     }
 
     @Test
-    void aMoveInTheSameDirectionAsTheEarlierReactionIsAContinuation() {
+    void anEarlierReleaseIsCalendarContext() {
         var fomc = new Release("FOMC decision", et("2026-11-24T14:00:00"), true);
         var text = MoveNarrative.summarize(input("2026-11-25T09:30:00", "2026-11-25T11:00:00", List.of(), "98",
-                List.of(c("2026-11-25T10:59:00", "97")), List.of(fomc), "100"));
-        assertThat(text).isEqualTo("SPY fell 1.0% in this window, extending the decline of 2.0% that followed "
-                + "the Nov 24, 2:00 PM FOMC decision. No other news in EventAlpha's sources.");
+                List.of(c("2026-11-25T10:59:00", "97")), List.of(fomc)));
+        assertThat(text).isEqualTo("No verified catalyst found for this move. Economic calendar: the Nov 24, 2:00 PM FOMC decision.");
     }
 
     @Test
     void withoutReleasesOnlyAReversingPathIsDescribed() {
         var text = MoveNarrative.summarize(input("2026-11-25T09:30:00", "2026-11-25T12:00:00", List.of(), "100",
-                List.of(c("2026-11-25T10:00:00", "98"), c("2026-11-25T11:59:00", "99.5")), List.of(), null));
+                List.of(c("2026-11-25T10:00:00", "98"), c("2026-11-25T11:59:00", "99.5")), List.of()));
         assertThat(text).isEqualTo("SPY fell 2.0% to a 10:00 AM low, then reversed to end -0.5% for the window. "
                 + "No verified catalyst found in EventAlpha's sources.");
         assertThat(MoveNarrative.summarize(input("2026-11-25T09:30:00", "2026-11-25T12:00:00", List.of(), "100",
-                List.of(c("2026-11-25T11:59:00", "100.1")), List.of(), null)))
+                List.of(c("2026-11-25T11:59:00", "100.1")), List.of())))
                 .isEqualTo("No verified catalyst found for this move.");
     }
 

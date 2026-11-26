@@ -215,6 +215,23 @@ it('pages older questions away and keeps only the newest result open', async () 
   expect(thread().queryByText('Question 1')).not.toBeInTheDocument();
 });
 
+it('saves a pending web answer to the conversation that requested it', async () => {
+  api.postJson.mockReturnValue(query({ ticker: 'SPY', start: '2026-11-25T17:00:00Z', end: '2026-11-25T19:00:00Z' }));
+  let finishSearch!: (response: unknown) => void;
+  const search = new Promise(resolve => { finishSearch = resolve; });
+  api.getJson.mockImplementation((path: string) => path.includes('/move-web-search?') ? search
+    : explanation(path).then(r => ({ data: { ...r.data, foundInSources: !path.includes('/SPY/') } })));
+  render(<MoveChat />);
+  await ask('Why did SPY rise?');
+  fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+  api.postJson.mockReturnValue(query({ ticker: 'NVDA', start: '2026-11-25T17:00:00Z', end: '2026-11-25T19:00:00Z' }));
+  await ask('Why did NVDA rise?');
+  await act(async () => finishSearch({ data: { answer: 'SPY coverage.', sources: [], available: true } }));
+  expect(thread().queryByText('SPY coverage.')).not.toBeInTheDocument();
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Conversations' })).getByText('Why did SPY rise?'));
+  expect(thread().getByText('SPY coverage.')).toBeInTheDocument();
+});
+
 it('asks a web search only when our sources found nothing, never for a replay', async () => {
   api.postJson.mockReturnValue(query({ ticker: 'SPY', start: '2026-11-25T17:00:00Z', end: '2026-11-25T19:00:00Z' }));
   api.getJson.mockImplementation((path: string) => {

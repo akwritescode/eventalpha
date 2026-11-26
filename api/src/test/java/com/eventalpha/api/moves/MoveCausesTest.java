@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import com.eventalpha.api.moves.JevClient.Direction;
 import com.eventalpha.api.moves.MoveCauses.Candidate;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,6 +29,9 @@ class MoveCausesTest {
     private final CauseSummarizer summarizer = mock(CauseSummarizer.class);
     private final Map<String, String> cache = new ConcurrentHashMap<>();
     private MoveCauses causes;
+
+    private static final Instant START = Instant.parse("2026-11-25T17:00:00Z");
+    private static final Instant END = Instant.parse("2026-11-25T19:00:00Z");
 
     private static final Candidate RALLY = new Candidate("article:1", "Chip stocks rally at midday",
             "Shares rebounded after the Commerce Department delayed the chip tariffs.", "h1");
@@ -48,39 +52,41 @@ class MoveCausesTest {
     @Test
     void titleAndBodyGoToJevAndOnlyAtLeastPointSixCounts() {
         when(jev.explainsMove(contains("delayed the chip tariffs"), any())).thenReturn(OptionalDouble.of(0.59));
-        assertThat(causes.judge("SPY", Direction.UP, List.of(RALLY))).isEmpty();
+        assertThat(causes.judge("SPY", START, END, Direction.UP, List.of(RALLY))).isEmpty();
         verify(summarizer, never()).reason(anyString(), anyString(), anyString());
 
         cache.clear();
         when(jev.explainsMove(anyString(), any())).thenReturn(OptionalDouble.of(0.6));
         when(summarizer.reason(anyString(), anyString(), anyString()))
                 .thenReturn(Optional.of("the Commerce Department delaying the chip tariffs"));
-        assertThat(causes.judge("SPY", Direction.UP, List.of(RALLY))).singleElement().satisfies(c -> {
+        assertThat(causes.judge("SPY", START, END, Direction.UP, List.of(RALLY))).singleElement().satisfies(c -> {
             assertThat(c.reason()).isEqualTo("the Commerce Department delaying the chip tariffs");
             assertThat(c.probability()).isEqualTo(0.6);
         });
     }
 
     @Test
-    void withoutClaudeTheReasonPointsAtTheArticle() {
+    void aPositiveScoreWithoutAnExtractedCauseAbstains() {
         when(jev.explainsMove(anyString(), any())).thenReturn(OptionalDouble.of(0.9));
         when(summarizer.reason(anyString(), anyString(), anyString())).thenReturn(Optional.empty());
-        assertThat(causes.judge("SPY", Direction.UP, List.of(RALLY)).getFirst().reason())
-                .isEqualTo("the cause reported in “Chip stocks rally at midday”");
+        assertThat(causes.judge("SPY", START, END, Direction.UP, List.of(RALLY))).isEmpty();
+        assertThat(cache).isEmpty();
     }
 
     @Test
     void verdictsAreCachedButFailuresAreRetried() {
         when(jev.explainsMove(anyString(), any())).thenReturn(OptionalDouble.empty());
-        assertThat(causes.judge("SPY", Direction.UP, List.of(RALLY))).isEmpty();
+        assertThat(causes.judge("SPY", START, END, Direction.UP, List.of(RALLY))).isEmpty();
         assertThat(cache).isEmpty();
 
         when(jev.explainsMove(anyString(), any())).thenReturn(OptionalDouble.of(0.8));
         when(summarizer.reason(anyString(), anyString(), anyString())).thenReturn(Optional.of("delayed tariffs"));
-        causes.judge("SPY", Direction.UP, List.of(RALLY));
-        causes.judge("SPY", Direction.UP, List.of(RALLY));
+        causes.judge("SPY", START, END, Direction.UP, List.of(RALLY));
+        causes.judge("SPY", START, END, Direction.UP, List.of(RALLY));
         verify(jev, org.mockito.Mockito.times(2)).explainsMove(anyString(), any()); // the failure + one real call
-        assertThat(cache).containsKey("eventalpha:move-cause:v1:article:1:h1:UP");
+        causes.judge("NVDA", START, END, Direction.UP, List.of(RALLY));
+        causes.judge("SPY", START.plusSeconds(60), END, Direction.UP, List.of(RALLY));
+        assertThat(cache).hasSize(3);
     }
 
     @Test
