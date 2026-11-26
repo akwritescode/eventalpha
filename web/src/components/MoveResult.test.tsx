@@ -58,7 +58,7 @@ it('shows ranked sector ETFs with their names and returns', () => {
   expect(screen.queryByLabelText('SMH -1%')).not.toBeInTheDocument();
 });
 
-it('labels economic releases and market commentary without X links', () => {
+it('labels releases, commentary and JEV-judged causes without X links', () => {
   render(<MoveResult result={{ ...base, priceMoves: [], timeline: [
     { id: 'release:fred:54|2026-11-25', title: 'Personal Income and Outlays (PCE)', url: 'https://fred.stlouisfed.org/release?rid=54',
       publishedAt: '2026-11-25T13:30:00Z', firstSeenAt: '2026-11-25T13:30:00Z', timing: 'before', status: 'economic_release',
@@ -66,9 +66,13 @@ it('labels economic releases and market commentary without X links', () => {
     { id: 'article:9001', title: 'Chip stocks rally as semiconductor ETF jumps 4% at midday', url: 'https://example.com/chips',
       publishedAt: '2026-11-25T17:30:00Z', firstSeenAt: '2026-11-25T17:30:00Z', timing: 'during', status: 'market_commentary',
       originalId: null, verifiedAt: null },
+    { id: 'article:9002', title: 'Semiconductor shares rebound after tariff delay', url: 'https://example.com/delay',
+      publishedAt: '2026-11-25T17:40:00Z', firstSeenAt: '2026-11-25T17:40:00Z', timing: 'during', status: 'explains_move',
+      originalId: null, verifiedAt: null, causeScore: 0.98 },
   ] }} />);
   expect(screen.getByText('Economic release')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Personal Income and Outlays (PCE)' })).toHaveAttribute('href', 'https://fred.stlouisfed.org/release?rid=54');
-  expect(screen.getByText('Market commentary · not a cause')).toBeInTheDocument();
+  expect(screen.getByText('Market commentary')).toBeInTheDocument();
+  expect(screen.getByText('Explains the move · JEV 0.98')).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'View X post' })).not.toBeInTheDocument();
 });

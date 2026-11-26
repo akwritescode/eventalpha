@@ -72,6 +72,9 @@ class ApiIntegrationTests {
     @MockitoBean
     MoveQuestionParser parser;
 
+    @MockitoBean
+    com.eventalpha.api.moves.MoveCauses causes;
+
     private org.springframework.test.web.servlet.ResultActions ask(String body) throws Exception {
         return mvc.perform(post("/api/v1/move-query").contentType(MediaType.APPLICATION_JSON).content(body));
     }
@@ -449,6 +452,10 @@ class ApiIntegrationTests {
                                 + "Technology +2.6%; lagging: Utilities -0.4%."))
                 .andExpect(jsonPath("$.data.summary").value(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("Chip stocks rally"))))
+                // The title alone decides nothing: the article still went to JEV (which said no here).
+                .andDo(result -> org.mockito.Mockito.verify(causes).judge(org.mockito.ArgumentMatchers.eq("SPY"),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.argThat(list -> list.stream()
+                                .anyMatch(c -> c.evidenceId().equals("article:9001")))))
                 .andExpect(jsonPath("$.data.timeline[?(@.id == 'article:9001')].status").value("market_commentary"))
                 .andExpect(jsonPath("$.data.timeline[?(@.status == 'economic_release')].title").value(
                         org.hamcrest.Matchers.containsInAnyOrder("Gross Domestic Product (GDP)",
@@ -456,6 +463,30 @@ class ApiIntegrationTests {
                                         + "(jobless claims)")))
                 .andExpect(jsonPath("$.data.timeline[?(@.status == 'economic_release')].timing").value(
                         org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("before"))));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void theRallyArticleIsJudgedOnItsBodyAndQuotedWhenJevAccepts() throws Exception {
+        loadNov25();
+        org.mockito.Mockito.when(causes.judge(org.mockito.ArgumentMatchers.eq("SPY"),
+                        org.mockito.ArgumentMatchers.eq(com.eventalpha.api.moves.JevClient.Direction.UP),
+                        org.mockito.ArgumentMatchers.argThat(list -> list.stream().anyMatch(c -> c.evidenceId().equals(
+                                "article:9001") && c.body().contains("delay the proposed chip tariffs")))))
+                .thenReturn(List.of(new com.eventalpha.api.moves.MoveCauses.Cause("article:9001",
+                        "Chip stocks rally as semiconductor ETF jumps 4% at midday",
+                        "the Commerce Department delaying the proposed chip tariffs", 0.98)));
+        mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
+                        .param("start", "2026-11-25T12:00:00-05:00")
+                        .param("end", "2026-11-25T14:00:00-05:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.summary").value("SPY rose 2.1% in this window, possibly due to the Commerce "
+                        + "Department delaying the proposed chip tariffs (per “Chip stocks rally as semiconductor ETF jumps "
+                        + "4% at midday”, JEV 0.98). Leading sectors: Semiconductors +3.3%, Technology +2.6%; "
+                        + "lagging: Utilities -0.4%."))
+                .andExpect(jsonPath("$.data.catalysts[0].evidenceId").value("article:9001"))
+                .andExpect(jsonPath("$.data.timeline[?(@.id == 'article:9001')].status").value("explains_move"))
+                .andExpect(jsonPath("$.data.timeline[?(@.id == 'article:9001')].causeScore").value(0.98));
     }
 
     @Test

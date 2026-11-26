@@ -72,7 +72,7 @@ class MoveRepository {
     // because the article store retains only the current version.
     private static final String TIMELINE = """
             WITH visible_articles AS (
-                SELECT id, title, url, source, published_at, ingested_at, updated_at, content_hash
+                SELECT id, title, url, source, published_at, ingested_at, updated_at, content_hash, body
                 FROM articles
                 WHERE tickers @> ARRAY[:ticker]::varchar[]
                   AND (published_at BETWEEN :contextStart AND :contextEnd OR EXISTS (
@@ -89,7 +89,8 @@ class MoveRepository {
                    CASE WHEN score.materiality >= 2.5 AND score.company_specific >= 0.8
                         THEN score.scored_at ELSE updated_at END AS available_at,
                    CASE WHEN score.materiality >= 2.5 AND score.company_specific >= 0.8
-                        THEN score.materiality END AS catalyst_materiality
+                        THEN score.materiality END AS catalyst_materiality,
+                   a.body, a.content_hash
             FROM visible_articles a
             LEFT JOIN LATERAL (
                 SELECT s.materiality, s.company_specific, s.scored_at
@@ -106,7 +107,8 @@ class MoveRepository {
                    CASE WHEN a.id IS NULL THEN 'unverified_lead' ELSE 'verified_discovery' END,
                    'article:' || a.id,
                    CASE WHEN a.id IS NOT NULL THEN x.verified_at END,
-                   CASE WHEN a.id IS NULL THEN x.first_seen_at ELSE GREATEST(x.verified_at, a.updated_at) END, NULL
+                   CASE WHEN a.id IS NULL THEN x.first_seen_at ELSE GREATEST(x.verified_at, a.updated_at) END, NULL,
+                   NULL, NULL
             FROM x_leads x
             LEFT JOIN visible_articles a ON a.id = x.article_id AND a.content_hash = x.article_content_hash
                 AND a.published_at <= :cutoff AND a.ingested_at <= :cutoff AND a.updated_at <= :cutoff
@@ -137,9 +139,11 @@ class MoveRepository {
             """;
 
     private final JdbcClient jdbc;
+    private final MoveCauses causes;
 
-    MoveRepository(JdbcClient jdbc) {
+    MoveRepository(JdbcClient jdbc, MoveCauses causes) {
         this.jdbc = jdbc;
+        this.causes = causes;
     }
 
     record SessionWindow(Instant start, Instant end, String message) {}
@@ -193,8 +197,9 @@ class MoveRepository {
                 "The previous trading session could not be verified within the past 7 days. Choose a window below.");
     }
 
+    /** causeScore: JEV's probability that the article explains the move, when it was asked. */
     record Evidence(String id, String source, String title, String url, Instant publishedAt, Instant firstSeenAt,
-                    String timing, String status, String originalId, Instant verifiedAt) {}
+                    String timing, String status, String originalId, Instant verifiedAt, Double causeScore) {}
 
     record Catalyst(String summary, String evidenceId) {}
 
@@ -209,7 +214,8 @@ class MoveRepository {
                        List<Catalyst> catalysts, List<Evidence> timeline, List<PriceMove> priceMoves,
                        List<String> benchmarks, SectorMovers sectorMovers) {}
 
-    private record TimelineRow(Evidence evidence, Instant availableAt, Double catalystMateriality) {}
+    private record TimelineRow(Evidence evidence, Instant availableAt, Double catalystMateriality, String body,
+                               String contentHash) {}
 
     private record PriceRow(PriceMove move, Instant availableAt) {}
 
@@ -229,9 +235,10 @@ class MoveRepository {
                     var evidence = new Evidence(rs.getString("id"), rs.getString("source"), rs.getString("title"),
                             rs.getString("url"), published, Sql.instant(rs, "first_seen_at"), timing,
                             commentary ? "market_commentary" : rs.getString("status"), rs.getString("original_id"),
-                            Sql.instant(rs, "verified_at"));
+                            Sql.instant(rs, "verified_at"), null);
                     return new TimelineRow(evidence, Sql.instant(rs, "available_at"),
-                            commentary ? null : Sql.nullableDouble(rs, "catalyst_materiality"));
+                            commentary ? null : Sql.nullableDouble(rs, "catalyst_materiality"),
+                            rs.getString("body"), rs.getString("content_hash"));
                 }).list();
 
         List<Evidence> articleTimeline = rows.stream().map(TimelineRow::evidence).toList();
@@ -263,6 +270,15 @@ class MoveRepository {
         var sectorMovers = sectorMovers(ticker, moves);
 
         var releases = releases(start.minus(RELEASE_LOOKBACK), end, cutoff, start, end);
+        // No verified catalyst: ask JEV whether nearby articles explain the move (title + body).
+        var found = catalysts.isEmpty()
+                ? causes.judge(ticker, direction(ticker, moves), candidates(rows, start)) : List.<MoveCauses.Cause>of();
+        var scores = found.stream().collect(java.util.stream.Collectors.toMap(MoveCauses.Cause::evidenceId,
+                MoveCauses.Cause::probability));
+        articleTimeline = articleTimeline.stream().map(e -> scores.containsKey(e.id())
+                ? new Evidence(e.id(), e.source(), e.title(), e.url(), e.publishedAt(), e.firstSeenAt(), e.timing(),
+                        "explains_move", e.originalId(), e.verifiedAt(), scores.get(e.id()))
+                : e).toList();
         var timeline = Stream.concat(articleTimeline.stream(), releases.stream().map(ReleaseRow::evidence))
                 .sorted(Comparator.comparing(Evidence::publishedAt).thenComparing(Evidence::id)).toList();
         var startPrice = moves.stream().filter(move -> move.symbol().equals(ticker)).map(PriceMove::startPrice)
@@ -271,9 +287,12 @@ class MoveRepository {
         var latestBefore = releases.stream().map(ReleaseRow::release).filter(r -> r.at().isBefore(start))
                 .map(Release::at).max(Comparator.naturalOrder()).orElse(null);
         var priceBeforeRelease = latestBefore == null || path.isEmpty() ? null : priceBefore(ticker, latestBefore, cutoff);
-        String summary = MoveNarrative.summarize(new MoveNarrative.Input(ticker, start, end, catalysts, startPrice,
+        String summary = MoveNarrative.summarize(new MoveNarrative.Input(ticker, start, end, catalysts, found, startPrice,
                 path, releases.stream().map(ReleaseRow::release).toList(), priceBeforeRelease, sectorMovers,
                 INDEX_ETFS.contains(ticker)));
+        if (!found.isEmpty()) {
+            catalysts = found.stream().map(c -> new Catalyst(c.reason(), c.evidenceId())).toList();
+        }
         Instant freshness = Stream.concat(rows.stream().map(TimelineRow::availableAt),
                 prices.stream().map(PriceRow::availableAt)).max(Comparator.naturalOrder()).orElse(null);
         return ApiResponse.of(new Explanation(ticker, start, end, cutoff, summary, catalysts, timeline,
@@ -282,6 +301,27 @@ class MoveRepository {
     }
 
     private record ReleaseRow(Release release, Evidence evidence) {}
+
+    /** Articles in the window, or up to a day before it, that JEV should read: in-window ones first, then the latest. */
+    private static List<MoveCauses.Candidate> candidates(List<TimelineRow> rows, Instant start) {
+        Instant floor = start.minus(RELEASE_LOOKBACK);
+        return rows.stream()
+                .filter(r -> r.evidence().id().startsWith("article:") && !r.evidence().timing().equals("after")
+                        && !r.evidence().publishedAt().isBefore(floor)
+                        && (r.evidence().status().equals("original_source") || r.evidence().status().equals("market_commentary")))
+                .sorted(Comparator.comparing((TimelineRow r) -> !r.evidence().timing().equals("during"))
+                        .thenComparing(r -> r.evidence().publishedAt(), Comparator.reverseOrder()))
+                .limit(MoveCauses.MAX_CANDIDATES)
+                .map(r -> new MoveCauses.Candidate(r.evidence().id(), r.evidence().title(), r.body(), r.contentHash()))
+                .toList();
+    }
+
+    private static JevClient.Direction direction(String ticker, List<PriceMove> moves) {
+        return moves.stream().filter(m -> m.symbol().equals(ticker)).findFirst()
+                .map(m -> m.returnPercent().signum() > 0 ? JevClient.Direction.UP
+                        : m.returnPercent().signum() < 0 ? JevClient.Direction.DOWN : JevClient.Direction.UNKNOWN)
+                .orElse(JevClient.Direction.UNKNOWN);
+    }
 
     /** Economic releases between from and to, as narrative inputs and timeline entries. */
     private List<ReleaseRow> releases(Instant from, Instant to, Instant cutoff, Instant start, Instant end) {
@@ -295,7 +335,7 @@ class MoveRepository {
                     var evidence = new Evidence("release:" + rs.getString("source") + ":" + rs.getString("event_key"),
                             "macro", title.equalsIgnoreCase(name) ? title : title + " (" + name + ")",
                             releaseUrl(rs.getString("source"), rs.getString("event_key"), title), at, at, timing,
-                            "economic_release", null, null);
+                            "economic_release", null, null, null);
                     return new ReleaseRow(new Release(name, at, rs.getString("importance").equals("high")), evidence);
                 }).list();
     }

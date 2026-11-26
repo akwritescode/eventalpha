@@ -25,7 +25,9 @@ import java.util.stream.Collectors;
  *       continuation or a reversal of the move that followed it;</li>
  *   <li>else only the shape of the price path.</li>
  * </ol>
- * Articles that merely describe price moves never reach this class as catalysts (MarketCommentary).
+ * Before releases: an article JEV judged (title + body, probability >= 0.6) to explain the move is
+ * quoted as a possible cause, with the reason Claude summarized from it. Articles that merely describe
+ * price moves are never promoted on their title alone (MarketCommentary).
  */
 final class MoveNarrative {
 
@@ -43,7 +45,7 @@ final class MoveNarrative {
     /** One minute candle: when it started and its close. */
     record Candle(Instant startedAt, BigDecimal close) {}
 
-    record Input(String ticker, Instant start, Instant end, List<Catalyst> catalysts,
+    record Input(String ticker, Instant start, Instant end, List<Catalyst> catalysts, List<MoveCauses.Cause> causes,
                  BigDecimal startPrice, List<Candle> path, List<Release> releases,
                  BigDecimal priceBeforeLatestRelease, SectorMovers sectors, boolean index) {}
 
@@ -56,6 +58,15 @@ final class MoveNarrative {
         if (!in.catalysts().isEmpty()) {
             return join("Plausible catalyst — " + in.catalysts().getFirst().summary()
                     + ". The timing supports a possible link.", sectors);
+        }
+        if (!in.causes().isEmpty()) {
+            var cause = in.causes().getFirst();
+            String moved = in.path().isEmpty() || in.startPrice() == null || in.startPrice().signum() <= 0 ? ""
+                    : moveWords(pct(in.startPrice(), in.path().getLast().close()));
+            String because = "possibly due to " + cause.reason() + " (per “" + cause.title() + "”, JEV "
+                    + String.format(Locale.US, "%.2f", cause.probability()) + ").";
+            return join(moved.isEmpty() ? "P" + because.substring(1) : in.ticker() + " " + moved + " in this window, " + because,
+                    sectors);
         }
         var inside = group(in.releases().stream().filter(r -> !r.at().isBefore(in.start()) && !r.at().isAfter(in.end()))
                 .toList(), true);
@@ -128,6 +139,11 @@ final class MoveNarrative {
         return ticker + " " + (s.total().signum() > 0 ? "rose " : "fell ") + unsigned(s.total())
                 + " in this window, extending the " + (pre.signum() < 0 ? "decline" : "rise") + " of " + unsigned(pre)
                 + " that followed " + what + ". No other news in EventAlpha's sources.";
+    }
+
+    private static String moveWords(BigDecimal total) {
+        if (total.abs().compareTo(THRESHOLD) < 0) return "was little changed (" + signed(total) + ")";
+        return (total.signum() > 0 ? "rose " : "fell ") + unsigned(total);
     }
 
     private static String priceOnly(String ticker, Shape s) {

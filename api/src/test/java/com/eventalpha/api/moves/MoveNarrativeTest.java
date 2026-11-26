@@ -24,7 +24,7 @@ class MoveNarrativeTest {
 
     private static Input input(String start, String end, List<Catalyst> catalysts, String startPrice, List<Candle> path,
                                List<Release> releases, String priceBeforeRelease) {
-        return new Input("SPY", et(start), et(end), catalysts, new BigDecimal(startPrice), path, releases,
+        return new Input("SPY", et(start), et(end), catalysts, List.of(), new BigDecimal(startPrice), path, releases,
                 priceBeforeRelease == null ? null : new BigDecimal(priceBeforeRelease), null, false);
     }
 

@@ -14,7 +14,8 @@ type Evidence = {
   publishedAt: string;
   firstSeenAt: string;
   timing: 'before' | 'during' | 'after';
-  status: 'original_source' | 'verified_discovery' | 'unverified_lead' | 'economic_release' | 'market_commentary';
+  status: 'original_source' | 'verified_discovery' | 'unverified_lead' | 'economic_release' | 'market_commentary' | 'explains_move';
+  causeScore?: number | null; // JEV's probability that the article explains the move
   originalId: string | null;
   verifiedAt: string | null;
 };
@@ -56,7 +57,8 @@ const labels: Record<Evidence['status'], string> = {
   verified_discovery: 'X discovery',
   unverified_lead: 'Unverified X lead',
   economic_release: 'Economic release',
-  market_commentary: 'Market commentary · not a cause',
+  market_commentary: 'Market commentary',
+  explains_move: 'Explains the move',
 };
 const timing: Record<Evidence['timing'], { label: string; color: string }> = {
   before: { label: 'Before', color: T.fgSecondary },
@@ -195,7 +197,9 @@ export function MoveResult({ result }: { result: Explanation }) {
                 bgcolor: timing[item.timing].color, boxShadow: `0 0 0 3px ${T.raised}` }} />
               <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
                 <Typography variant="caption" sx={{ color: timing[item.timing].color, fontWeight: 600 }}>{timing[item.timing].label}</Typography>
-                <Typography variant="caption" color="text.secondary">{labels[item.status]}</Typography>
+                <Typography variant="caption" color={item.status === 'explains_move' ? 'primary' : 'text.secondary'}>
+                  {labels[item.status]}{item.causeScore != null ? ` · JEV ${item.causeScore.toFixed(2)}` : ''}
+                </Typography>
               </Stack>
               <Typography sx={{ mt: 0.25 }}>
                 {!isXPost(item) && /^https?:\/\//i.test(item.url)
