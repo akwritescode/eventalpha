@@ -382,6 +382,10 @@ class MoveRepository {
     }
 
     /** Short names used in summaries: "the 8:30 AM GDP and PCE releases". */
+    /**
+     * Short names never contain a period: the web app finds the summary's "Economic calendar: ...".
+     * sentence by its full stop, and "U.S." used to cut it short (the sentence was shown twice).
+     */
     static String releaseName(String title) {
         if (title.startsWith("Gross Domestic Product")) return "GDP";
         if (title.startsWith("Personal Income and Outlays")) return "PCE";
@@ -396,8 +400,12 @@ class MoveRepository {
         if (title.startsWith("Manufacturers' Shipments")) return "factory orders";
         if (title.startsWith("ADP National Employment")) return "ADP payrolls";
         if (title.startsWith("Job Openings and Labor Turnover")) return "JOLTS";
+        if (title.startsWith("Employment Cost Index")) return "employment cost index";
+        if (title.startsWith("U.S. Import and Export Price")) return "import prices";
+        if (title.startsWith("Real Earnings")) return "real earnings";
+        if (title.startsWith("Productivity and Costs")) return "productivity and costs";
         if (title.startsWith("FOMC")) return "FOMC decision";
-        return title;
+        return title.replace(".", "");
     }
 
     private static String releaseUrl(String source, String key, String title) {

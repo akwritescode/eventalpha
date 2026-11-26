@@ -80,6 +80,24 @@ it('combines an empty web result with the main conclusion and keeps calendar con
   expect(screen.queryByText(/First seen|Nov 20|Published/)).not.toBeInTheDocument();
 });
 
+it('moves calendar context out of the summary for every release the API names', () => {
+  // "import prices" is the API's name for "U.S. Import and Export Price Indexes": no periods to cut the sentence short.
+  render(<MoveResult result={{
+    ...base,
+    summary: 'SPY was little changed (+0.1%) for the window. Economic calendar: the 8:30 AM import prices release. '
+      + 'Leading sectors: Technology +0.4%.',
+    timeline: [{
+      id: 'release:imports', title: 'U.S. Import and Export Price Indexes (import prices)', url: 'https://example.com/imports',
+      publishedAt: '2026-11-17T13:30:00Z', firstSeenAt: '2026-11-10T11:00:00Z', timing: 'before',
+      status: 'economic_release', originalId: null, verifiedAt: null,
+    }],
+  }} />);
+  expect(screen.getByText('SPY was little changed (+0.1%) for the window. Leading sectors: Technology +0.4%.'))
+    .toBeInTheDocument();
+  expect(screen.queryByText(/Economic calendar:/)).not.toBeInTheDocument();
+  expect(screen.getByText('Economic calendar context')).toHaveTextContent(/import prices/);
+});
+
 it('renders web citations only for HTTP and HTTPS URLs', () => {
   render(<MoveResult result={base} web={{ status: 'done', answer: {
     answer: 'Attributed news coverage.', available: true,
