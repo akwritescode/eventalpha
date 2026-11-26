@@ -48,7 +48,10 @@ real-paraphrase, buried-cause (the cause in the last paragraph of a long recap),
 attributed-by-analysts and explicit-cause should be accepted; recap-no-cause, hedged-speculation,
 despite, wrong-date, wrong-ticker, wrong-direction, cause-after-window, no-move-described and
 prompt-injection should not. A CI fixture check requires unique ids, a label on every article,
-sources for every non-synthetic article, and both labels in every group.
+sources for every non-synthetic article, both labels in every group, and a valid
+`expectedReasonPattern` on each positive fixture. The case-insensitive pattern describes the
+expected cause using common paraphrases. When a fixture lists several causes, any supported
+cause satisfies the pattern.
 
 ## Live article-level scoring
 
@@ -60,16 +63,12 @@ EVENTALPHA_RUN_LIVE_MOVE_EVAL=1 ./gradlew test --rerun-tasks --tests '*LiveMoveM
 ```
 
 `EVENTALPHA_LIVE_EVAL_RUNS=3` repeats every JEV judgment (and Claude extraction) to expose
-variance. The report gives JEV-level precision and recall, what users would see (a cause is shown
-only when JEV accepts and Claude grounds a reason), misses by kind, verdicts that flip between
-runs, and articles within 0.15 of the threshold. Both prompt variants run: direction only, and with
-the measured return; assertions apply to the variant production uses (direction only since the
-Nov 26 rollback: with the return, JEV accepted a same-size move from another day and Claude dropped
-causes of gap moves).
+variance. The direction-only arm uses the current production prompts and checks whether each cause
+should be shown and whether its text matches the expected cause. A pattern match checks the
+expected attribution and can still miss extra claims in the reason.
 
-The eval runs the same articles and prompts with direction alone and with the measured return and
-actual candle close times. The JUnit XML under `api/build/test-results/test/` records model IDs,
-the JEV threshold, scores, extracted reasons, and false-positive and false-negative counts for both
-variants. The measured-return variant is checked against the labels. The direction-only variant
-provides a comparison. Scores and wording may vary on repeat runs. No live model call is made by
-the default test suite.
+The comparison arm uses the measured return, actual candle close times, and the JEV and Claude
+instructions from commit `54019d0`. Both arms use the same configured model IDs. The JUnit XML
+under `api/build/test-results/test/` records reasons for each run, false positives, hidden causes,
+reason mismatches, JEV precision and recall, verdicts that flip, and scores near the threshold.
+The direction-only arm determines the test result. The default suite uses no live model calls.

@@ -56,13 +56,15 @@
         "id": "rounded-return-with-attribution",
         "synthetic": true,
         "text": "SPY rose roughly 2% from shortly after noon to just before 2 p.m. Eastern on November 25, 2026. Traders attributed that rebound to a Commerce Department announcement at noon delaying a planned tariff increase.",
-        "explainsMove": true
+        "explainsMove": true,
+        "expectedReasonPattern": "(?=.*tariff)(?=.*(?:delay|postpon|defer|push.*back))"
       },
       {
         "id": "attribution-without-percentage",
         "synthetic": true,
         "text": "SPY rose between noon and 2 p.m. Eastern on November 25, 2026. Traders explicitly attributed the rebound to a Commerce Department announcement at noon delaying a planned tariff increase.",
-        "explainsMove": true
+        "explainsMove": true,
+        "expectedReasonPattern": "(?=.*tariff)(?=.*(?:delay|postpon|defer|push.*back))"
       }
     ]
   },
@@ -102,7 +104,8 @@
         "id": "synthetic-explicit-attribution",
         "synthetic": true,
         "text": "SPY rose between 11 a.m. and 2 p.m. Eastern on November 25, 2026. Traders explicitly attributed the late-morning gain in SPY to the Commerce Department announcing at 11:15 a.m. that it would delay a planned tariff increase.",
-        "explainsMove": true
+        "explainsMove": true,
+        "expectedReasonPattern": "(?=.*tariff)(?=.*(?:delay|postpon|defer|push.*back))"
       }
     ],
     "measuredReturn": {

@@ -62,10 +62,14 @@ public class JevClient {
 
     /** Probability (0 to 1) that the text states the move's cause; empty when unavailable or on failure. */
     OptionalDouble explainsMove(String text, Direction direction) {
+        return scoreExplanation(text, question(direction));
+    }
+
+    OptionalDouble scoreExplanation(String text, Map<String, Object> question) {
         if (!enabled) return OptionalDouble.empty();
         try {
             Map<?, ?> response = http.post().uri("/v1/systemone").contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("state", text, "model", model, "questions", Map.of("explains", question(direction))))
+                    .body(Map.of("state", text, "model", model, "questions", Map.of("explains", question)))
                     .retrieve().body(Map.class);
             if (response != null && response.get("answers") instanceof Map<?, ?> answers
                     && answers.get("explains") instanceof Map<?, ?> answer && answer.get("noul") instanceof Number p) {

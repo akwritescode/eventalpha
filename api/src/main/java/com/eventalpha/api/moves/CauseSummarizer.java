@@ -57,10 +57,15 @@ class CauseSummarizer {
     }
 
     static StructuredMessageCreateParams<CauseReason> params(String model, String ticker, String move, String article) {
+        return params(model, ticker, move, article, SYSTEM);
+    }
+
+    private static StructuredMessageCreateParams<CauseReason> params(
+            String model, String ticker, String move, String article, String systemPrompt) {
         return MessageCreateParams.builder()
                 .model(model)
                 .maxTokens(1024L)
-                .system(SYSTEM)
+                .system(systemPrompt)
                 .outputConfig(StructuredOutputConfig.<CauseReason>builder()
                         .format(CauseReason.class)
                         .effort(OutputConfig.Effort.LOW)
@@ -70,9 +75,13 @@ class CauseSummarizer {
     }
 
     Optional<String> reason(String ticker, String move, String article) {
+        return reason(ticker, move, article, SYSTEM);
+    }
+
+    Optional<String> reason(String ticker, String move, String article, String systemPrompt) {
         if (client == null) return Optional.empty();
         try {
-            var message = client.messages().create(params(model, ticker, move, article));
+            var message = client.messages().create(params(model, ticker, move, article, systemPrompt));
             if (message.stopReason().filter(StopReason.END_TURN::equals).isEmpty()) return Optional.empty();
             return message.content().stream().flatMap(block -> block.text().stream())
                     .flatMap(text -> supportedReason(text.text(), article).stream()).findFirst();
