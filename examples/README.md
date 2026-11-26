@@ -58,6 +58,12 @@ QQQ, DIA) also name their leading and lagging sector ETFs. Headlines that only r
 ("Chip stocks rally", "S&P 500 slides at midday") are labelled market commentary and are never promoted
 on their materiality score; only JEV reading the body can make one a cause.
 
+When none of that finds anything (no catalyst, no article JEV accepts, no release in the lookback), the
+web app asks `GET /api/v1/tickers/{ticker}/move-web-search`: Claude searches news coverage of the window
+and the answer is shown apart from EventAlpha's evidence, labelled as a web search, with its sources.
+Uncited answers are dropped, replays never search, and results are cached for a day and limited to
+`EVENTALPHA_WEB_SEARCH_RATE_LIMIT_PER_MINUTE` (default 5) per IP. See ADR 0004's amendment.
+
 Without `ANTHROPIC_API_KEY` the endpoint answers free text with 503 and the chat asks for a ticker
 instead. Questions that reach the model are limited to `EVENTALPHA_ASK_RATE_LIMIT_PER_MINUTE`
 (default 10) per IP, on top of the API's global limit.

@@ -214,3 +214,29 @@ it('pages older questions away and keeps only the newest result open', async () 
   await ask('Question 6');
   expect(thread().queryByText('Question 1')).not.toBeInTheDocument();
 });
+
+it('asks a web search only when our sources found nothing, never for a replay', async () => {
+  api.postJson.mockReturnValue(query({ ticker: 'SPY', start: '2026-11-25T17:00:00Z', end: '2026-11-25T19:00:00Z' }));
+  api.getJson.mockImplementation((path: string) => {
+    if (path.includes('/move-web-search?')) {
+      return Promise.resolve({ data: { answer: 'Reports said AI-stock losses eased and dip buyers stepped in.',
+        sources: [{ title: 'How major US stock indexes fared', url: 'https://example.com/indexes' }], available: true } });
+    }
+    return explanation(path).then(r => ({ data: { ...r.data, foundInSources: false } }));
+  });
+  render(<MoveChat />);
+  await ask('Why did SPY rise from noon to 2?');
+  await flush();
+  expect(api.getJson.mock.calls.some(([p]) => p.startsWith('/api/v1/tickers/SPY/move-web-search?'))).toBe(true);
+  expect(screen.getByText(/From a web search · outside EventAlpha/)).toBeInTheDocument();
+  expect(screen.getByText('Reports said AI-stock losses eased and dip buyers stepped in.')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'How major US stock indexes fared' })).toHaveAttribute('href', 'https://example.com/indexes');
+  const stored = JSON.parse(window.localStorage.getItem('eventalpha.conversations.v1')!);
+  expect(stored[0].turns[1].web.status).toBe('done');
+
+  api.getJson.mockClear();
+  api.postJson.mockReturnValue(query({ ticker: 'SPY', start: '2026-11-25T17:00:00Z', end: '2026-11-25T19:00:00Z', replay: true }));
+  await ask('What was known by then?');
+  await flush();
+  expect(api.getJson.mock.calls.some(([p]) => p.includes('/move-web-search?'))).toBe(false);
+});

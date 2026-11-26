@@ -51,6 +51,7 @@ eventalpha:
     api-key: ${ANTHROPIC_API_KEY:}
     model: ${EVENTALPHA_ASK_MODEL:claude-haiku-5-5}
     requests-per-minute: ${EVENTALPHA_ASK_RATE_LIMIT_PER_MINUTE:10}  # per IP, on top of the global limit
+    web-searches-per-minute: ${EVENTALPHA_WEB_SEARCH_RATE_LIMIT_PER_MINUTE:5}  # move-web-search, per IP
   explain:  # JEV judges whether an article explains a price move; off while the key is empty
     typesafe-api-key: ${TYPESAFE_API_KEY:}
     model: ${EVENTALPHA_EXPLAIN_MODEL:jev-1.14.0}

@@ -75,6 +75,9 @@ class ApiIntegrationTests {
     @MockitoBean
     com.eventalpha.api.moves.MoveCauses causes;
 
+    @MockitoBean
+    com.eventalpha.api.moves.WebMoveSearch web;
+
     private org.springframework.test.web.servlet.ResultActions ask(String body) throws Exception {
         return mvc.perform(post("/api/v1/move-query").contentType(MediaType.APPLICATION_JSON).content(body));
     }
@@ -520,6 +523,36 @@ class ApiIntegrationTests {
                         + "1.0%: likely dip buying after the release-driven sell-off."))
                 .andExpect(jsonPath("$.data.timeline[?(@.status == 'economic_release')].title")
                         .value(org.hamcrest.Matchers.contains("Consumer Price Index (CPI)")));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void webSearchIsOfferedOnlyWhenOurSourcesFoundNothingAndDescribesTheMove() throws Exception {
+        loadNov25();
+        mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
+                        .param("start", "2026-11-25T12:00:00-05:00").param("end", "2026-11-25T14:00:00-05:00"))
+                .andExpect(jsonPath("$.data.foundInSources").value(true)); // the 08:30 releases count
+        mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
+                        .param("start", "2025-06-10T12:00:00-04:00").param("end", "2025-06-10T12:30:00-04:00"))
+                .andExpect(jsonPath("$.data.foundInSources").value(false));
+
+        org.mockito.Mockito.when(web.available()).thenReturn(true);
+        org.mockito.Mockito.when(web.search(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(new com.eventalpha.api.moves.WebMoveSearch.WebAnswer("Reports said chipmakers rebounded.",
+                        List.of(new com.eventalpha.api.moves.WebMoveSearch.Source("Chips rebound", "https://example.com/a")),
+                        true));
+        mvc.perform(get("/api/v1/tickers/SPY/move-web-search")
+                        .param("start", "2026-11-25T12:00:00-05:00").param("end", "2026-11-25T14:00:00-05:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.answer").value("Reports said chipmakers rebounded."))
+                .andExpect(jsonPath("$.data.sources[0].url").value("https://example.com/a"));
+        org.mockito.Mockito.verify(web).search(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(
+                "SPY rose 2.1% between 12:00 PM and 2:00 PM ET (window starting Wednesday, Nov 25, 2026, ending "
+                        + "Wednesday, Nov 25, 2026)"));
+        mvc.perform(get("/api/v1/tickers/SPY/move-web-search")
+                        .param("start", java.time.OffsetDateTime.now().minusMinutes(30).toString())
+                        .param("end", java.time.OffsetDateTime.now().plusMinutes(30).toString()))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -1,5 +1,5 @@
 import React, { useId } from 'react';
-import { Alert, Box, Link, Stack, Typography } from '@mui/material';
+import { Alert, Box, CircularProgress, Link, Stack, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import ArrowDropDownRounded from '@mui/icons-material/ArrowDropDownRounded';
 import ArrowDropUpRounded from '@mui/icons-material/ArrowDropUpRounded';
@@ -34,6 +34,7 @@ export type Explanation = {
   benchmarks?: string[];
   priceMoves: PriceMove[];
   sectorMovers?: { gainers: SectorMove[]; decliners: SectorMove[] };
+  foundInSources?: boolean; // false: EventAlpha's sources hold nothing, so the chat asks a web search
 };
 
 const eastern = (options: Intl.DateTimeFormatOptions) =>
@@ -150,7 +151,36 @@ export function MoveResultSummary({ result, onExpand }: { result: Explanation; o
   );
 }
 
-export function MoveResult({ result }: { result: Explanation }) {
+export type WebAnswer = { answer: string | null; sources: { title: string; url: string }[]; available: boolean };
+export type WebSearch = { status: 'loading' } | { status: 'done'; answer: WebAnswer };
+
+/** A web search's answer, kept apart from EventAlpha's own evidence and labelled as such. */
+function WebSection({ web }: { web: WebSearch }) {
+  if (web.status === 'done' && !web.answer.available) return null;
+  return (
+    <Box sx={{ mt: 2, p: 1.5, borderRadius: 2, border: `1px dashed ${T.borderStrong}` }} aria-live="polite">
+      <Typography variant="overline" color="text.secondary">From a web search · outside EventAlpha's sources</Typography>
+      {web.status === 'loading' ? (
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ color: T.fgSecondary }}>
+          <CircularProgress size={12} color="inherit" /><Typography variant="body2">Searching news coverage…</Typography>
+        </Stack>
+      ) : web.answer.answer ? (
+        <>
+          <Typography variant="body2">{web.answer.answer}</Typography>
+          <Stack direction="row" gap={1.5} flexWrap="wrap" sx={{ mt: 0.75 }}>
+            {web.answer.sources.map(s => (
+              <Link key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" variant="caption">{s.title}</Link>
+            ))}
+          </Stack>
+        </>
+      ) : (
+        <Typography variant="body2" color="text.secondary">No reported cause found in news coverage either.</Typography>
+      )}
+    </Box>
+  );
+}
+
+export function MoveResult({ result, web }: { result: Explanation; web?: WebSearch }) {
   const anchor = useId();
   const isDemo = result.ticker === demo.ticker && Date.parse(result.start) === Date.parse(demo.start)
     && Date.parse(result.end) === Date.parse(demo.end);
@@ -183,6 +213,8 @@ export function MoveResult({ result }: { result: Explanation }) {
         )}
         <Typography variant="caption" color="text.secondary">Evidence available as of {stamp(result.asOf)}.</Typography>
       </Box>
+
+      {web && <WebSection web={web} />}
 
       <Typography variant="overline" component="h3" color="text.secondary" sx={{ display: 'block', mt: 2 }}>Evidence timeline</Typography>
       {result.timeline.length === 0 ? <Typography color="text.secondary">No matching evidence in the timeline.</Typography> : (

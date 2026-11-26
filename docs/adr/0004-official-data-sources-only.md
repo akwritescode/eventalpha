@@ -23,3 +23,13 @@ prohibit it, and no republishing of third-party content beyond titles, summaries
   nowcast instead.
 * News coverage is narrower than a commercial feed; tickers in press releases are inferred
   from company names when the feed omits the exchange citation.
+
+## Amendment (2026-11-25): web search as a labelled last resort
+
+When EventAlpha's own sources hold nothing for a price move (no catalyst, no article JEV accepts, no
+economic release in the 3 trading days before the window), the web app can ask
+`GET /api/v1/tickers/{ticker}/move-web-search`. Claude runs Anthropic's web search tool (a licensed
+service, not scraping) and returns a short summary with citations. The answer is shown apart from
+EventAlpha's evidence, labelled "From a web search · outside EventAlpha's sources", with titles and
+links only, in line with the decision above. An answer without citations is discarded, replays never
+search (later coverage would leak hindsight), and results are cached for a day and rate limited per IP.

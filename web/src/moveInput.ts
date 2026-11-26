@@ -1,5 +1,5 @@
 import { getJson, postJson } from './api';
-import type { Explanation } from './components/MoveResult';
+import type { Explanation, WebAnswer } from './components/MoveResult';
 
 export type MoveWindow = { start: string; end: string };
 export type TickerOption = { ticker: string; name: string };
@@ -62,6 +62,11 @@ export async function frameWindow(frame: TimeFrame): Promise<MoveWindow | string
   const route = frame.kind === 'today' ? '/api/v1/move-window/today' : `/api/v1/move-window/since-yesterday?anchor=${frame.anchor}`;
   const { data } = await getJson<{ start: string | null; end: string | null; message?: string | null }>(route);
   return data.start && data.end ? { start: data.start, end: data.end } : data.message || 'That window isn’t available right now.';
+}
+
+/** News coverage from a web search, for moves EventAlpha's own sources don't explain. */
+export function fetchWebSearch(ticker: string, window: MoveWindow) {
+  return getJson<WebAnswer>(`/api/v1/tickers/${encodeURIComponent(ticker)}/move-web-search?${new URLSearchParams(window)}`);
 }
 
 export function fetchExplanation(ticker: string, window: MoveWindow, replay = false) {

@@ -1,12 +1,13 @@
 // Ask EventAlpha conversations, kept in this browser's localStorage (no accounts yet).
 // Everything here tolerates storage that is full, corrupt or unavailable (private mode,
 // blocked site data): the chat then still works, it just isn't remembered.
-import type { Explanation } from './components/MoveResult';
+import type { Explanation, WebSearch } from './components/MoveResult';
 import type { MoveWindow, TickerOption } from './moveInput';
 
 export type Turn =
   | { id: number; role: 'user'; text: string }
-  | { id: number; role: 'assistant'; text?: string; result?: Explanation; options?: TickerOption[]; pending?: boolean };
+  | { id: number; role: 'assistant'; text?: string; result?: Explanation; options?: TickerOption[]; pending?: boolean;
+      web?: WebSearch };
 
 /** The ticker and window the chat is about, so a reopened conversation can be continued. */
 export type ChatContext = { ticker?: string; name?: string; window?: MoveWindow };

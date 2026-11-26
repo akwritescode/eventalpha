@@ -5,9 +5,9 @@ import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
 import SendRounded from '@mui/icons-material/SendRounded';
 import { ApiError } from '../api';
 import { ChatContext, Conversation, deleteConversation, loadConversations, newConversationId, saveConversation, Turn } from '../conversations';
-import { askMoveQuery, fetchExplanation, frameWindow, MINUTE_MS, MoveWindow, TickerOption, TIME_FRAMES, TimeFrame, windowError } from '../moveInput';
+import { askMoveQuery, fetchExplanation, fetchWebSearch, frameWindow, MINUTE_MS, MoveWindow, TickerOption, TIME_FRAMES, TimeFrame, windowError } from '../moveInput';
 import { MONO, T } from '../theme';
-import { MoveResult, MoveResultSummary, windowLabel } from './MoveResult';
+import { Explanation, MoveResult, MoveResultSummary, WebAnswer, windowLabel } from './MoveResult';
 import { ConversationList } from './ConversationList';
 import { DateRange, DateRangeField } from './DateRangeField';
 import { Panel } from './ui';
@@ -57,7 +57,9 @@ export function MoveChat() {
   /** Shows a conversation (or a blank one); the one on screen is already saved. */
   function show(id: string, conversation?: Conversation) {
     setConversationId(id);
-    setTurns(conversation?.turns || []);
+    // A web search still loading when the page closed won't finish: show it as not available.
+    setTurns((conversation?.turns || []).map(t => (t.role === 'assistant' && t.web?.status === 'loading'
+      ? { ...t, web: { status: 'done' as const, answer: { answer: null, sources: [], available: false } } } : t)));
     setContext(conversation?.context || {});
     setReplay(conversation?.replay || false);
     setCustom(undefined);
@@ -92,12 +94,28 @@ export function MoveChat() {
     setTurns(t => t.map(turn => (turn.id === replyId ? { id: replyId, role: 'assistant' as const, ...reply } : turn)));
     setBusy(false);
     setSaveTick(n => n + 1);
+    if (reply.web?.status === 'loading' && reply.result) searchWeb(replyId, reply.result);
+  }
+
+  /** EventAlpha's sources found nothing: ask a web search, then fill in the same reply. */
+  function searchWeb(replyId: number, result: Explanation) {
+    const settle = (answer: WebAnswer) => {
+      setTurns(t => t.map(turn => (turn.id === replyId && turn.role === 'assistant'
+        ? { ...turn, web: { status: 'done' as const, answer } } : turn)));
+      setSaveTick(n => n + 1);
+    };
+    fetchWebSearch(result.ticker, { start: result.start, end: result.end })
+      .then(({ data }) => settle(data))
+      .catch(() => settle({ answer: null, sources: [], available: false }));
   }
 
   async function explain(ticker: string, window: MoveWindow, asOfEnd: boolean, name?: string) {
     const { data } = await fetchExplanation(ticker, window, asOfEnd);
     setContext({ ticker, name, window });
+    // Replays stay hindsight-free: no web search, which would read later coverage.
+    const web = data.foundInSources === false && !asOfEnd ? { status: 'loading' as const } : undefined;
     return {
+      web,
       text: asOfEnd ? `Here’s what EventAlpha had collected by the end of that window.`
         : data.catalysts.length
           ? `Here are possible drivers for ${ticker}, ${windowLabel(window.start, window.end)}.`
@@ -230,7 +248,7 @@ export function MoveChat() {
                   )}
                   {turn.result && (turn.id === latestResult || expanded.has(turn.id) ? (
                     <>
-                      <MoveResult result={turn.result} />
+                      <MoveResult result={turn.result} web={turn.web} />
                       {turn.id !== latestResult && (
                         <Button size="small" onClick={() => toggle(turn.id)} sx={{ mt: 0.5, color: T.fgSecondary }}>Hide details</Button>
                       )}

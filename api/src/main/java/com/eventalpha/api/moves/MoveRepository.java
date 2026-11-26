@@ -15,6 +15,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import com.eventalpha.api.moves.MoveNarrative.Candle;
 import com.eventalpha.api.moves.MoveNarrative.Release;
@@ -212,7 +213,7 @@ class MoveRepository {
 
     record Explanation(String ticker, Instant start, Instant end, Instant asOf, String summary,
                        List<Catalyst> catalysts, List<Evidence> timeline, List<PriceMove> priceMoves,
-                       List<String> benchmarks, SectorMovers sectorMovers) {}
+                       List<String> benchmarks, SectorMovers sectorMovers, boolean foundInSources) {}
 
     private record TimelineRow(Evidence evidence, Instant availableAt, Double catalystMateriality, String body,
                                String contentHash) {}
@@ -302,10 +303,16 @@ class MoveRepository {
                 prices.stream().map(PriceRow::availableAt)).max(Comparator.naturalOrder()).orElse(null);
         return ApiResponse.of(new Explanation(ticker, start, end, cutoff, summary, catalysts, timeline,
                 moves.stream().filter(move -> move.symbol().equals(ticker) || BENCHMARKS.contains(move.symbol())).toList(),
-                BENCHMARKS, sectorMovers), freshness);
+                BENCHMARKS, sectorMovers, !catalysts.isEmpty() || !releases.isEmpty()), freshness);
     }
 
     private record ReleaseRow(Release release, Evidence evidence) {}
+
+    /** The ticker's own move over the window, if minute prices cover it. */
+    Optional<PriceMove> windowMove(String ticker, Instant start, Instant end, Instant cutoff) {
+        return priceMoves(ticker, start, end, cutoff).stream().map(PriceRow::move)
+                .filter(move -> move.symbol().equals(ticker)).findFirst();
+    }
 
     /**
      * Midnight (New York) of the trading day {@link #LOOKBACK_TRADING_DAYS} sessions before the window's
