@@ -25,7 +25,13 @@ class MoveNarrativeTest {
     private static Input input(String start, String end, List<Catalyst> catalysts, String startPrice, List<Candle> path,
                                List<Release> releases) {
         return new Input("SPY", et(start), et(end), catalysts, List.of(), new BigDecimal(startPrice), path, releases,
-                null, false);
+                null, null, false);
+    }
+
+    private static Input inputPre(String start, String end, String priceBeforeLatestRelease, String startPrice,
+                                  List<Candle> path, List<Release> releases) {
+        return new Input("SPY", et(start), et(end), List.of(), List.of(), new BigDecimal(startPrice), path, releases,
+                new BigDecimal(priceBeforeLatestRelease), null, false);
     }
 
     private static final Release CPI = new Release("CPI", et("2026-11-25T10:00:00"), true);
@@ -43,7 +49,8 @@ class MoveNarrativeTest {
         var text = MoveNarrative.summarize(input("2026-11-25T09:30:00", "2026-11-25T11:00:00", List.of(), "100",
                 List.of(c("2026-11-25T09:45:00", "100.1"), c("2026-11-25T10:30:00", "101"), c("2026-11-25T10:59:00", "101.5")),
                 List.of(CPI)));
-        assertThat(text).isEqualTo("No verified catalyst found for this move. Economic calendar: the 10:00 AM CPI release.");
+        assertThat(text).isEqualTo("SPY rose 1.5% for the window. No verified catalyst found in EventAlpha's sources. "
+                + "Economic calendar: the 10:00 AM CPI release.");
     }
 
     @Test
@@ -59,7 +66,34 @@ class MoveNarrativeTest {
         var fomc = new Release("FOMC decision", et("2026-11-24T14:00:00"), true);
         var text = MoveNarrative.summarize(input("2026-11-25T09:30:00", "2026-11-25T11:00:00", List.of(), "98",
                 List.of(c("2026-11-25T10:59:00", "97")), List.of(fomc)));
-        assertThat(text).isEqualTo("No verified catalyst found for this move. Economic calendar: the Nov 24, 2:00 PM FOMC decision.");
+        assertThat(text).isEqualTo("SPY fell 1.0% for the window. No verified catalyst found in EventAlpha's sources. "
+                + "Economic calendar: the Nov 24, 2:00 PM FOMC decision.");
+    }
+
+    @Test
+    void aPlainMoveIsDescribedEvenWithoutAReversal() {
+        var text = MoveNarrative.summarize(input("2026-11-25T12:00:00", "2026-11-25T14:00:00", List.of(), "100",
+                List.of(c("2026-11-25T13:59:00", "101")), List.of()));
+        assertThat(text).isEqualTo("SPY rose 1.0% for the window. No verified catalyst found in EventAlpha's sources.");
+    }
+
+    @Test
+    void aPreWindowFallThenRiseIsDescribedWithoutAssigningACause() {
+        var at = et("2026-11-25T08:30:00");
+        var text = MoveNarrative.summarize(inputPre("2026-11-25T12:00:00", "2026-11-25T14:00:00", "718.50", "701.50",
+                List.of(c("2026-11-25T13:59:00", "716.25")),
+                List.of(new Release("GDP", at, true), new Release("PCE", at, true))));
+        assertThat(text).isEqualTo("SPY had fallen 2.4% between the 8:30 AM GDP and PCE releases and the start of "
+                + "this window, then rose 2.1% in this window. No verified catalyst found in EventAlpha's sources.");
+        assertThat(text).doesNotContain("dip buying", "profit-taking", "likely", "due to");
+    }
+
+    @Test
+    void aPreWindowMoveBelowThresholdIsNotDescribed() {
+        var text = MoveNarrative.summarize(inputPre("2026-11-25T12:00:00", "2026-11-25T14:00:00", "100", "100.10",
+                List.of(c("2026-11-25T13:59:00", "101.10")), List.of(CPI)));
+        assertThat(text).isEqualTo("SPY rose 1.0% for the window. No verified catalyst found in EventAlpha's sources. "
+                + "Economic calendar: the 10:00 AM CPI release.");
     }
 
     @Test
@@ -70,7 +104,8 @@ class MoveNarrativeTest {
                 + "No verified catalyst found in EventAlpha's sources.");
         assertThat(MoveNarrative.summarize(input("2026-11-25T09:30:00", "2026-11-25T12:00:00", List.of(), "100",
                 List.of(c("2026-11-25T11:59:00", "100.1")), List.of())))
-                .isEqualTo("No verified catalyst found for this move.");
+                .isEqualTo("SPY was little changed (+0.1%) for the window. "
+                        + "No verified catalyst found in EventAlpha's sources.");
     }
 
     @Test

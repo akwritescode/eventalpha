@@ -48,7 +48,10 @@ first. Otherwise JEV reads the titles and bodies of up to three candidate articl
 the preceding three trading days. It judges whether each article explains the requested ticker, direction,
 and window in Eastern time. At 0.6 or above, Claude extracts a reason and a supporting excerpt that
 must match the article after normalizing whitespace and quotation marks. Verdicts are cached in Redis per article version
-and target move. Economic calendar entries and leading or lagging sectors provide context. Alembic
+and target move. Without a catalyst, the summary still describes the price path: the window's move,
+any reversal inside it, and — when releases precede the window — the move between the latest such
+release and the window start, stated as timing and prices only, never as the release causing it.
+Economic calendar entries and leading or lagging sectors provide context. Alembic
 backfills standard Eastern times for recognized legacy FRED releases. Date-only entries with no
 known time remain on the calendar and are omitted from intraday explanations.
 

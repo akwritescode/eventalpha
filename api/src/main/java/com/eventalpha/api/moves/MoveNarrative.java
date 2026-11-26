@@ -33,7 +33,7 @@ final class MoveNarrative {
 
     record Input(String ticker, Instant start, Instant end, List<Catalyst> catalysts, List<MoveCauses.Cause> causes,
                  BigDecimal startPrice, List<Candle> path, List<Release> releases,
-                 SectorMovers sectors, boolean index) {}
+                 BigDecimal priceBeforeLatestRelease, SectorMovers sectors, boolean index) {}
 
     /** The window's path from its start price: total move, low/high and when, and whether it reversed. */
     private record Shape(BigDecimal total, Instant lowAt, Instant highAt, boolean dip, boolean spike,
@@ -59,9 +59,25 @@ final class MoveNarrative {
         var before = group(in.releases().stream().filter(r -> r.at().isBefore(in.start())).toList(), false);
 
         var near = inside != null ? inside : before;
-        String text = in.path().isEmpty() || in.startPrice() == null || in.startPrice().signum() <= 0
-                ? "No verified catalyst found for this move."
-                : priceOnly(in.ticker(), shape(in.startPrice(), in.path()));
+        boolean noPath = in.path().isEmpty() || in.startPrice() == null || in.startPrice().signum() <= 0;
+        if (noPath) {
+            String text = "No verified catalyst found for this move.";
+            if (near != null) text += " Economic calendar: " + label(near, in.start()) + ".";
+            return join(text, sectors);
+        }
+        var shape = shape(in.startPrice(), in.path());
+        // Purely descriptive: the move between the latest pre-window release and the window
+        // start, stated as timing and prices only, never as the release causing it.
+        BigDecimal pre = in.priceBeforeLatestRelease() != null && in.priceBeforeLatestRelease().signum() > 0
+                ? pct(in.priceBeforeLatestRelease(), in.startPrice()) : null;
+        if (inside == null && before != null && pre != null && pre.abs().compareTo(THRESHOLD) >= 0
+                && !shape.dip() && !shape.spike()) {
+            return join(in.ticker() + " had " + (pre.signum() < 0 ? "fallen " : "risen ") + unsigned(pre)
+                    + " between " + label(before, in.start()) + " and the start of this window, then "
+                    + moveWords(shape.total()) + " in this window. "
+                    + "No verified catalyst found in EventAlpha's sources.", sectors);
+        }
+        String text = priceOnly(in.ticker(), shape);
         if (near != null) text += " Economic calendar: " + label(near, in.start()) + ".";
         return join(text, sectors);
     }
@@ -80,7 +96,8 @@ final class MoveNarrative {
             return ticker + " rose " + unsigned(s.spikePct()) + " to a " + TIME.format(s.highAt()) + " high, then reversed to end "
                     + signed(s.total()) + " for the window. No verified catalyst found in EventAlpha's sources.";
         }
-        return "No verified catalyst found for this move.";
+        return ticker + " " + moveWords(s.total()) + " for the window. "
+                + "No verified catalyst found in EventAlpha's sources.";
     }
 
     private static Shape shape(BigDecimal start, List<Candle> path) {

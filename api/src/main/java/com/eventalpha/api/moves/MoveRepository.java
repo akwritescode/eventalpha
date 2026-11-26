@@ -52,6 +52,13 @@ class MoveRepository {
             ORDER BY scheduled_at, title
             """;
 
+    private static final String PRICE_BEFORE = """
+            SELECT close FROM price_bars_minute
+            WHERE symbol = :symbol AND started_at < :at AND started_at >= :floor
+              AND first_seen_at <= :cutoff AND close > 0
+            ORDER BY started_at DESC LIMIT 1
+            """;
+
     private static final String PATH = """
             SELECT started_at, close FROM price_bars_minute
             WHERE symbol = :symbol AND started_at >= :start AND started_at < :end
@@ -287,8 +294,12 @@ class MoveRepository {
         var startPrice = moves.stream().filter(move -> move.symbol().equals(ticker)).map(PriceMove::startPrice)
                 .findFirst().orElse(null);
         var path = startPrice == null ? List.<Candle>of() : path(ticker, start, end, cutoff);
+        var latestBefore = releases.stream().map(ReleaseRow::release).filter(r -> r.at().isBefore(start))
+                .map(Release::at).max(Comparator.naturalOrder()).orElse(null);
+        var priceBeforeRelease = latestBefore == null || path.isEmpty() ? null
+                : priceBefore(ticker, latestBefore, cutoff);
         String summary = MoveNarrative.summarize(new MoveNarrative.Input(ticker, start, end, catalysts, found, startPrice,
-                path, releases.stream().map(ReleaseRow::release).toList(), sectorMovers,
+                path, releases.stream().map(ReleaseRow::release).toList(), priceBeforeRelease, sectorMovers,
                 INDEX_ETFS.contains(ticker)));
         if (!found.isEmpty()) {
             catalysts = found.stream().map(c -> new Catalyst(c.reason(), c.evidenceId())).toList();
@@ -398,6 +409,13 @@ class MoveRepository {
         if (source.equals("fred")) return "https://fred.stlouisfed.org/release?rid=" + key.split("\\|")[0];
         if (source.equals("bls")) return "https://www.bls.gov/bls/newsrels.htm";
         return "";
+    }
+
+    /** The last price known before a release: the anchor for the descriptive pre-window move. */
+    private BigDecimal priceBefore(String ticker, Instant at, Instant cutoff) {
+        return jdbc.sql(PRICE_BEFORE).param("symbol", ticker).param("at", Timestamp.from(at))
+                .param("floor", Timestamp.from(at.minus(Duration.ofDays(10)))).param("cutoff", Timestamp.from(cutoff))
+                .query(BigDecimal.class).optional().orElse(null);
     }
 
     private List<Candle> path(String ticker, Instant start, Instant end, Instant cutoff) {
