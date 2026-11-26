@@ -457,8 +457,9 @@ class ApiIntegrationTests {
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.argThat(list -> list.stream()
                                 .anyMatch(c -> c.evidenceId().equals("article:9001")))))
                 .andExpect(jsonPath("$.data.timeline[?(@.id == 'article:9001')].status").value("market_commentary"))
+                // hasItems: seed.sql adds a CPI release two days before today, which the lookback also covers.
                 .andExpect(jsonPath("$.data.timeline[?(@.status == 'economic_release')].title").value(
-                        org.hamcrest.Matchers.containsInAnyOrder("Gross Domestic Product (GDP)",
+                        org.hamcrest.Matchers.hasItems("Gross Domestic Product (GDP)",
                                 "Personal Income and Outlays (PCE)", "Unemployment Insurance Weekly Claims Report "
                                         + "(jobless claims)")))
                 .andExpect(jsonPath("$.data.timeline[?(@.status == 'economic_release')].timing").value(
@@ -487,6 +488,38 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.data.catalysts[0].evidenceId").value("article:9001"))
                 .andExpect(jsonPath("$.data.timeline[?(@.id == 'article:9001')].status").value("explains_move"))
                 .andExpect(jsonPath("$.data.timeline[?(@.id == 'article:9001')].causeScore").value(0.98));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void aMondayWindowLooksBackThreeTradingDaysNotThree24Hours() throws Exception {
+        // Sessions: Tue 10, Wed 11 (Veterans Day: stocks open), Thu 12, Fri 13. Monday the 16th reaches back to Wed the 11th.
+        jdbc.sql("""
+                INSERT INTO market_sessions (day, is_open, open_time, close_time, description, source)
+                SELECT d, true, '09:30', '16:00', 'test', 'test' FROM unnest(ARRAY['2026-11-10', '2026-11-11', '2026-11-12',
+                    '2026-11-13']::date[]) d
+                ON CONFLICT (day) DO UPDATE SET is_open = true
+                """).update();
+        jdbc.sql("""
+                INSERT INTO econ_events (source, event_key, title, event_date, scheduled_at, importance)
+                VALUES ('bls', 'cpi-test', 'Consumer Price Index', '2026-11-12', '2026-11-12 08:30-05', 'high'),
+                       ('bls', 'ppi-test', 'Producer Price Index', '2026-11-10', '2026-11-10 08:30-05', 'medium')
+                """).update();
+        jdbc.sql("""
+                INSERT INTO price_bars_minute (symbol, started_at, open, close, first_seen_at)
+                SELECT 'SPY', started_at::timestamptz, close, close, now() - interval '1 minute'
+                FROM (VALUES ('2026-11-11 15:59-05', 700.0), ('2026-11-13 15:59-05', 686.0),
+                             ('2026-11-16 10:30-05', 690.0), ('2026-11-16 10:59-05', 693.0)) bar(started_at, close)
+                """).update();
+        mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
+                        .param("start", "2026-11-16T10:00:00-05:00")
+                        .param("end", "2026-11-16T11:00:00-05:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.summary").value("No news in EventAlpha's sources during this window. SPY had "
+                        + "fallen 2.0% after the Nov 12, 8:30 AM CPI release before this window, then reversed, rising "
+                        + "1.0%: likely dip buying after the release-driven sell-off."))
+                .andExpect(jsonPath("$.data.timeline[?(@.status == 'economic_release')].title")
+                        .value(org.hamcrest.Matchers.contains("Consumer Price Index (CPI)")));
     }
 
     @Test

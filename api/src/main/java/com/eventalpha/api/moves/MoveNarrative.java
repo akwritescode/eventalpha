@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  *   <li>else an economic release in the window, or one shortly before it when prices had not reacted
  *       yet (an 08:30 release before the open), is named as the likely driver of the move, and a drop
  *       that reversed is described as such;</li>
- *   <li>else the latest release up to a day before the window: the window's move is described as a
+ *   <li>else the latest release in the 3 trading days before the window: the window's move is described as a
  *       continuation or a reversal of the move that followed it;</li>
  *   <li>else only the shape of the price path.</li>
  * </ol>

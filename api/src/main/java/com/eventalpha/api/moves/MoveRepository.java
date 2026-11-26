@@ -39,8 +39,8 @@ class MoveRepository {
     private static final int SECTOR_MOVER_LIMIT = 3;
     /** Index ETFs: their summary names the leading and lagging sectors. */
     private static final Set<String> INDEX_ETFS = Set.of("SPY", "QQQ", "DIA");
-    /** How far before the window to look for an economic release when nothing is found inside it. */
-    private static final Duration RELEASE_LOOKBACK = Duration.ofDays(1);
+    /** How many trading sessions before the window to look for releases and articles that may explain it. */
+    static final int LOOKBACK_TRADING_DAYS = 3;
 
     // Scheduled releases have a time (BLS calendar, FOMC 14:00, FRED releases at their agency's
     // fixed time); 08:30 ET is the fallback for any row loaded before those times were recorded.
@@ -220,9 +220,12 @@ class MoveRepository {
     private record PriceRow(PriceMove move, Instant availableAt) {}
 
     ApiResponse<Explanation> explain(String ticker, Instant start, Instant end, Instant cutoff) {
+        Instant floor = lookbackFloor(start);
+        // Verified catalysts stay within a day of the window; older articles only feed JEV and the narrative.
+        Instant catalystFloor = start.minus(CONTEXT);
         var rows = jdbc.sql(TIMELINE)
                 .param("ticker", ticker)
-                .param("contextStart", Timestamp.from(start.minus(CONTEXT)))
+                .param("contextStart", Timestamp.from(floor))
                 .param("contextEnd", Timestamp.from(end.plus(CONTEXT)))
                 .param("windowEnd", Timestamp.from(end))
                 .param("cutoff", Timestamp.from(cutoff))
@@ -244,7 +247,8 @@ class MoveRepository {
         List<Evidence> articleTimeline = rows.stream().map(TimelineRow::evidence).toList();
         var originals = new LinkedHashMap<String, Evidence>();
         for (var item : articleTimeline) {
-            if (item.status().equals("original_source") && !item.timing().equals("after")) {
+            if (item.status().equals("original_source") && !item.timing().equals("after")
+                    && !item.publishedAt().isBefore(catalystFloor)) {
                 originals.put(item.id(), item);
             }
         }
@@ -256,7 +260,8 @@ class MoveRepository {
         }
         // Promote material, company-specific filings even when nobody discovered them on X.
         rows.stream().filter(row -> row.catalystMateriality() != null
-                        && !row.evidence().timing().equals("after"))
+                        && !row.evidence().timing().equals("after")
+                        && !row.evidence().publishedAt().isBefore(catalystFloor))
                 .sorted(Comparator.comparing(TimelineRow::catalystMateriality).reversed()
                         .thenComparing(row -> row.evidence().publishedAt(), Comparator.reverseOrder()))
                 .forEach(row -> {
@@ -269,10 +274,10 @@ class MoveRepository {
         var moves = prices.stream().map(PriceRow::move).toList();
         var sectorMovers = sectorMovers(ticker, moves);
 
-        var releases = releases(start.minus(RELEASE_LOOKBACK), end, cutoff, start, end);
+        var releases = releases(floor, end, cutoff, start, end);
         // No verified catalyst: ask JEV whether nearby articles explain the move (title + body).
         var found = catalysts.isEmpty()
-                ? causes.judge(ticker, direction(ticker, moves), candidates(rows, start)) : List.<MoveCauses.Cause>of();
+                ? causes.judge(ticker, direction(ticker, moves), candidates(rows, floor)) : List.<MoveCauses.Cause>of();
         var scores = found.stream().collect(java.util.stream.Collectors.toMap(MoveCauses.Cause::evidenceId,
                 MoveCauses.Cause::probability));
         articleTimeline = articleTimeline.stream().map(e -> scores.containsKey(e.id())
@@ -302,9 +307,32 @@ class MoveRepository {
 
     private record ReleaseRow(Release release, Evidence evidence) {}
 
-    /** Articles in the window, or up to a day before it, that JEV should read: in-window ones first, then the latest. */
-    private static List<MoveCauses.Candidate> candidates(List<TimelineRow> rows, Instant start) {
-        Instant floor = start.minus(RELEASE_LOOKBACK);
+    /**
+     * Midnight (New York) of the trading day {@link #LOOKBACK_TRADING_DAYS} sessions before the window's
+     * day, from the exchange calendar: a Monday window reaches back through Wednesday. Without calendar
+     * rows, weekdays stand in for sessions.
+     */
+    Instant lookbackFloor(Instant start) {
+        LocalDate day = start.atZone(NEW_YORK).toLocalDate();
+        var session = jdbc.sql("""
+                        SELECT day FROM market_sessions WHERE is_open AND day < :day AND day >= :floor
+                        ORDER BY day DESC OFFSET :skip LIMIT 1
+                        """)
+                .param("day", day).param("floor", day.minusDays(21)).param("skip", LOOKBACK_TRADING_DAYS - 1)
+                .query(LocalDate.class).optional();
+        LocalDate from = session.orElseGet(() -> {
+            LocalDate d = day;
+            for (int n = 0; n < LOOKBACK_TRADING_DAYS; ) {
+                d = d.minusDays(1);
+                if (d.getDayOfWeek().getValue() <= 5) n++;
+            }
+            return d;
+        });
+        return from.atStartOfDay(NEW_YORK).toInstant();
+    }
+
+    /** Articles in the window or the lookback before it that JEV should read: in-window ones first, then the latest. */
+    private static List<MoveCauses.Candidate> candidates(List<TimelineRow> rows, Instant floor) {
         return rows.stream()
                 .filter(r -> r.evidence().id().startsWith("article:") && !r.evidence().timing().equals("after")
                         && !r.evidence().publishedAt().isBefore(floor)
@@ -375,7 +403,7 @@ class MoveRepository {
     /** The last price known before a release: what the market's reaction is measured from. */
     private BigDecimal priceBefore(String ticker, Instant at, Instant cutoff) {
         return jdbc.sql(PRICE_BEFORE).param("symbol", ticker).param("at", Timestamp.from(at))
-                .param("floor", Timestamp.from(at.minus(Duration.ofDays(4)))).param("cutoff", Timestamp.from(cutoff))
+                .param("floor", Timestamp.from(at.minus(Duration.ofDays(10)))).param("cutoff", Timestamp.from(cutoff))
                 .query(BigDecimal.class).optional().orElse(null);
     }
 

@@ -48,10 +48,11 @@ first. Otherwise an economic release inside the window, or one before it that pr
 yet (an 08:30 release before the open), is named as the likely driver, and a drop or spike that reversed
 is described as such ("SPY fell 2.9% after the 8:30 AM GDP and PCE releases, bottoming at 11:15 AM,
 then reversed…"). Before that, when no verified catalyst exists, up to three articles from the window
-or the day before go to JEV (title and body) with one yes/no question: does the article name what
+or the 3 trading days before it go to JEV (title and body) with one yes/no question: does the article name what
 caused this rise or decline? At 0.6 or above the summary says "possibly due to …", with the cause
 Claude Haiku summarizes from the article (`TYPESAFE_API_KEY`, `EVENTALPHA_EXPLAIN_MODEL`; verdicts are
-cached in Redis per article version and direction). With no news in the window, the latest release up to a day earlier is used, and the
+cached in Redis per article version and direction). With no news in the window, the latest release in the 3 trading days before it (from the exchange calendar,
+so a Monday window reaches back through Wednesday) is used, and the
 window's move is called a continuation or a reversal of the move that followed it. Index ETFs (SPY,
 QQQ, DIA) also name their leading and lagging sector ETFs. Headlines that only report a price move
 ("Chip stocks rally", "S&P 500 slides at midday") are labelled market commentary and are never promoted
