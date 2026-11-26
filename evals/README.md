@@ -15,8 +15,11 @@ The linked 11 a.m.–2 p.m. and 8:30 a.m.–2 p.m. SPY cases ask different quest
   contributor to the dip when a source explicitly connects them. Dip buying after heavy selling
   is a hypothesis for the recovery. A reversal on a price chart does not establish who bought or why.
 
-A synthetic positive control checks that the model can accept an article with explicit attribution.
-The control is an article-level fixture and does not represent market news.
+The noon–2 p.m. case has synthetic article controls for an exact-return recap, the same return for
+a different window or ticker, the opposite direction, explicit attribution with a rounded return
+and slightly different quote times, and explicit attribution without a percentage. The measured
+returns for the two paired cases come from replay fixture candles, including the earlier opening
+candle in the sparse 11 a.m. fixture. The synthetic articles do not represent market news.
 
 ## Repeatable API scoring
 
@@ -43,7 +46,9 @@ services, export `TYPESAFE_API_KEY` and `ANTHROPIC_API_KEY`, then run from `api/
 EVENTALPHA_RUN_LIVE_MOVE_EVAL=1 ./gradlew test --rerun-tasks --tests '*LiveMoveModelEvalTest'
 ```
 
-The JUnit XML under `api/build/test-results/test/` records model IDs, the JEV threshold, scores,
-and extracted reasons. The test checks verdicts and whether Claude can extract a supported
-reason. Scores and wording may vary on repeat runs, so retain multiple runs before changing
-the threshold. No live model call is made by the default test suite.
+The eval runs the same articles and prompts with direction alone and with the measured return and
+actual candle close times. The JUnit XML under `api/build/test-results/test/` records model IDs,
+the JEV threshold, scores, extracted reasons, and false-positive and false-negative counts for both
+variants. The measured-return variant is checked against the labels. The direction-only variant
+provides a comparison. Scores and wording may vary on repeat runs. No live model call is made by
+the default test suite.

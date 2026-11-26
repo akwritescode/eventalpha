@@ -53,7 +53,9 @@ public class JevClient {
         };
         return Map.of("type", "noul",
                 "instructions", "For the target ticker and time window, the article names a specific cause (a news event, economic data, policy decision, "
-                        + "or company announcement) for the stock " + move + " it describes, not just the size of the move.",
+                        + "or company announcement) for the stock " + move + " it describes, not just the size of the move. "
+                        + "Use a measured return only to match the move, allowing for rounding and nearby quote times. "
+                        + "A matching return or coincident timing is not evidence of a cause. Require explicit attribution.",
                 "criteria", Map.of(
                         "true", "The text says what triggered or caused the " + move + ".",
                         "false", "The text only reports that prices moved, or gives a cause only for a different ticker, period, or direction."));

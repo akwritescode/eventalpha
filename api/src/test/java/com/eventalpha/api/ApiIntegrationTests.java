@@ -557,7 +557,10 @@ class ApiIntegrationTests {
                 """).update();
         org.mockito.Mockito.when(causes.judge(org.mockito.ArgumentMatchers.eq("SPY"),
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.eq(com.eventalpha.api.moves.JevClient.Direction.UP),
+                        org.mockito.ArgumentMatchers.argThat(measured -> measured != null
+                                && measured.percent().compareTo(new java.math.BigDecimal("2.1026")) == 0
+                                && measured.start().equals(java.time.Instant.parse("2026-11-25T17:00:00Z"))
+                                && measured.end().equals(java.time.Instant.parse("2026-11-25T19:00:00Z"))),
                         org.mockito.ArgumentMatchers.argThat(list -> list.stream().anyMatch(c -> c.evidenceId().equals(
                                 "article:9001") && c.body().contains("delay the proposed chip tariffs")))))
                 .thenReturn(List.of(new com.eventalpha.api.moves.MoveCauses.Cause("article:9001",

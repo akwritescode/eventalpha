@@ -1,6 +1,7 @@
 package com.eventalpha.api.moves;
 
 import com.eventalpha.api.moves.JevClient.Direction;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -34,6 +35,16 @@ public class MoveCauses {
 
     public record Candidate(String evidenceId, String title, String body, String contentHash) {}
 
+    public record MeasuredReturn(Instant start, Instant end, BigDecimal percent) {
+        Direction direction() {
+            return switch (percent.signum()) {
+                case 1 -> Direction.UP;
+                case -1 -> Direction.DOWN;
+                default -> Direction.UNKNOWN;
+            };
+        }
+    }
+
     /** An article judged to explain the move: JEV's probability and the reason to quote. */
     public record Cause(String evidenceId, String title, String reason, double probability) {}
 
@@ -52,9 +63,10 @@ public class MoveCauses {
     }
 
     /** Causes found among the candidates, highest probability first. Never throws. */
-    public List<Cause> judge(String ticker, Instant start, Instant end, Direction direction, List<Candidate> candidates) {
+    public List<Cause> judge(String ticker, Instant start, Instant end, MeasuredReturn measured, List<Candidate> candidates) {
         if (!jev.available() || candidates.isEmpty()) return List.of();
-        String windowMove = describeMove(start, end, direction);
+        Direction direction = measured == null ? Direction.UNKNOWN : measured.direction();
+        String windowMove = describeMove(start, end, direction, measured);
         try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
             var futures = candidates.stream().limit(MAX_CANDIDATES)
                     .map(c -> pool.submit(() -> judgeOne(ticker, windowMove, direction, c))).toList();
@@ -71,7 +83,7 @@ public class MoveCauses {
     }
 
     private Cause judgeOne(String ticker, String windowMove, Direction direction, Candidate c) {
-        String key = "eventalpha:move-cause:v3:" + c.evidenceId() + ":" + c.contentHash() + ":" + ticker + " " + windowMove;
+        String key = "eventalpha:move-cause:v4:" + c.evidenceId() + ":" + c.contentHash() + ":" + ticker + " " + windowMove;
         String cached = cacheGet(key);
         double p;
         String reason;
@@ -97,8 +109,14 @@ public class MoveCauses {
         return "Target move: " + ticker + " " + windowMove + "\n\nArticle:\n" + article;
     }
 
-    static String describeMove(Instant start, Instant end, Direction direction) {
-        return move(direction) + " between " + EASTERN.format(start) + " and " + EASTERN.format(end) + " (Eastern time)";
+    static String describeMove(Instant start, Instant end, Direction direction, MeasuredReturn measured) {
+        String requested = move(direction) + " between " + EASTERN.format(start) + " and " + EASTERN.format(end)
+                + " (Eastern time)";
+        if (measured == null) return requested;
+        String sign = measured.percent().signum() > 0 ? "+" : "";
+        return requested + ". Measured return: " + sign + measured.percent().stripTrailingZeros().toPlainString()
+                + "% from the candle closes at " + EASTERN.format(measured.start()) + " and "
+                + EASTERN.format(measured.end()) + " (Eastern time)";
     }
 
     static String text(Candidate c) {

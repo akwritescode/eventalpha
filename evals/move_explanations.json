@@ -20,7 +20,51 @@
     "end": "2026-11-25T14:00:00-05:00",
     "asOf": "2026-11-25T17:42:29-05:00",
     "expected": "abstain",
-    "rationale": "Coverage and sector returns describe the recovery. Neither identifies a verified trigger for this window."
+    "rationale": "Coverage and sector returns describe the recovery. Neither identifies a verified trigger for this window.",
+    "measuredReturn": {
+      "percent": 2.1026,
+      "start": "2026-11-25T12:00:00-05:00",
+      "end": "2026-11-25T14:00:00-05:00",
+      "provenance": "Replay fixture SPY closes of 701.50 and 716.25."
+    },
+    "articleJudgments": [
+      {
+        "id": "exact-return-recap",
+        "synthetic": true,
+        "text": "SPY gained 2.1026% from noon to 2 p.m. Eastern on November 25, 2026, recovering some of its earlier losses.",
+        "explainsMove": false
+      },
+      {
+        "id": "same-size-wrong-window",
+        "synthetic": true,
+        "text": "On November 25, 2026, traders attributed SPY's 2.1% gain from 9:30 a.m. to 11 a.m. Eastern to an unexpected policy announcement at 9:45 a.m. This report does not address afternoon trading.",
+        "explainsMove": false
+      },
+      {
+        "id": "same-size-wrong-ticker",
+        "synthetic": true,
+        "text": "From noon to 2 p.m. Eastern on November 25, 2026, the semiconductor ETF SMH rallied 2.1%. Traders attributed SMH's gain to better-than-expected semiconductor orders. No explanation for SPY was given.",
+        "explainsMove": false
+      },
+      {
+        "id": "same-size-opposite-direction",
+        "synthetic": true,
+        "text": "On November 25, 2026, SPY fell 2.1% between noon and 2 p.m. Eastern. Traders attributed the decline to an unexpected policy announcement.",
+        "explainsMove": false
+      },
+      {
+        "id": "rounded-return-with-attribution",
+        "synthetic": true,
+        "text": "SPY rose roughly 2% from shortly after noon to just before 2 p.m. Eastern on November 25, 2026. Traders attributed that rebound to a Commerce Department announcement at noon delaying a planned tariff increase.",
+        "explainsMove": true
+      },
+      {
+        "id": "attribution-without-percentage",
+        "synthetic": true,
+        "text": "SPY rose between noon and 2 p.m. Eastern on November 25, 2026. Traders explicitly attributed the rebound to a Commerce Department announcement at noon delaying a planned tariff increase.",
+        "explainsMove": true
+      }
+    ]
   },
   {
     "id": "spy-wider-window",
@@ -60,7 +104,13 @@
         "text": "SPY rose between 11 a.m. and 2 p.m. Eastern on November 25, 2026. Traders explicitly attributed the late-morning gain in SPY to the Commerce Department announcing at 11:15 a.m. that it would delay a planned tariff increase.",
         "explainsMove": true
       }
-    ]
+    ],
+    "measuredReturn": {
+      "percent": 1.9384,
+      "start": "2026-11-25T09:31:00-05:00",
+      "end": "2026-11-25T14:00:00-05:00",
+      "provenance": "Replay fixture closes of 702.63 and 716.25. The 09:31 candle close is the latest one before the requested 11:00 start in this sparse fixture."
+    }
   },
   {
     "id": "spy-nov25-830-to-2",

@@ -46,7 +46,8 @@ requests carry UTC timestamps.
 The summary reads the window's minute path alongside the evidence. A verified company catalyst comes
 first. Otherwise JEV reads the titles and bodies of up to three candidate articles from the window and
 the preceding three trading days. It judges whether each article explains the requested ticker, direction,
-and window in Eastern time. At 0.6 or above, Claude extracts a reason and a supporting excerpt that
+and window in Eastern time. When candle data is available, JEV and Claude also receive the measured
+return and actual candle close times to identify the move. At 0.6 or above, Claude extracts a reason and a supporting excerpt that
 must match the article after normalizing whitespace and quotation marks. Verdicts are cached in Redis per article version
 and target move. Without a catalyst, the summary still describes the price path: the window's move,
 any reversal inside it, and, when prices bracket a pre-window release, a comparison labeled with the

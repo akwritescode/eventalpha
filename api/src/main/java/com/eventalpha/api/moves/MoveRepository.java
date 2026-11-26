@@ -277,13 +277,16 @@ class MoveRepository {
         List<Catalyst> catalysts = List.copyOf(grouped.values());
         var prices = priceMoves(ticker, start, end, cutoff);
         var moves = prices.stream().map(PriceRow::move).toList();
+        var tickerMove = moves.stream().filter(move -> move.symbol().equals(ticker)).findFirst().orElse(null);
         var sectorMovers = sectorMovers(ticker, moves);
 
         var releases = releases(floor, end, cutoff, start, end);
         // No verified catalyst: ask JEV whether nearby articles explain the move (title + body).
         var shortlist = candidates(rows, floor);
+        var measured = tickerMove == null ? null : new MoveCauses.MeasuredReturn(tickerMove.measuredStart(),
+                tickerMove.measuredEnd(), tickerMove.returnPercent());
         var found = catalysts.isEmpty()
-                ? causes.judge(ticker, start, end, direction(ticker, moves), shortlist) : List.<MoveCauses.Cause>of();
+                ? causes.judge(ticker, start, end, measured, shortlist) : List.<MoveCauses.Cause>of();
         var scores = found.stream().collect(java.util.stream.Collectors.toMap(MoveCauses.Cause::evidenceId,
                 MoveCauses.Cause::probability));
         articleTimeline = articleTimeline.stream().map(e -> scores.containsKey(e.id())
@@ -292,9 +295,7 @@ class MoveRepository {
                 : e).toList();
         var timeline = Stream.concat(articleTimeline.stream(), releases.stream().map(ReleaseRow::evidence))
                 .sorted(Comparator.comparing(Evidence::publishedAt).thenComparing(Evidence::id)).toList();
-        var windowOpen = moves.stream().filter(move -> move.symbol().equals(ticker))
-                .map(move -> new PriceClose(move.measuredStart(), move.startPrice()))
-                .findFirst().orElse(null);
+        var windowOpen = tickerMove == null ? null : new PriceClose(tickerMove.measuredStart(), tickerMove.startPrice());
         var path = windowOpen == null ? List.<Candle>of() : path(ticker, start, end, cutoff);
         var latestBefore = releases.stream().map(ReleaseRow::release).filter(r -> r.at().isBefore(start))
                 .map(Release::at).max(Comparator.naturalOrder()).orElse(null);
@@ -360,13 +361,6 @@ class MoveRepository {
                 .limit(MoveCauses.MAX_CANDIDATES)
                 .map(r -> new MoveCauses.Candidate(r.evidence().id(), r.evidence().title(), r.body(), r.contentHash()))
                 .toList();
-    }
-
-    private static JevClient.Direction direction(String ticker, List<PriceMove> moves) {
-        return moves.stream().filter(m -> m.symbol().equals(ticker)).findFirst()
-                .map(m -> m.returnPercent().signum() > 0 ? JevClient.Direction.UP
-                        : m.returnPercent().signum() < 0 ? JevClient.Direction.DOWN : JevClient.Direction.UNKNOWN)
-                .orElse(JevClient.Direction.UNKNOWN);
     }
 
     /** Economic releases between from and to, as narrative inputs and timeline entries. */
