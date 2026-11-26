@@ -460,8 +460,9 @@ class ApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
                 .andExpect(jsonPath("$.data.summary").value(
-                        "SPY had fallen 2.4% between the 8:30 AM GDP and PCE releases and the start of this window, "
+                        "SPY had fallen 2.4% from Nov 24, 4:00 PM to Nov 25, 12:00 PM Eastern, "
                                 + "then rose 2.1% in this window. No verified catalyst found in EventAlpha's sources. "
+                                + "Economic calendar: the 8:30 AM GDP and PCE releases. "
                                 + "Leading sectors: Semiconductors +3.3%, Technology +2.6%; lagging: Utilities -0.4%."))
                 .andExpect(jsonPath("$.data.summary").value(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("Chip stocks rally"))))
@@ -601,8 +602,9 @@ class ApiIntegrationTests {
                         .param("end", "2026-11-16T11:00:00-05:00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summary").value(
-                        "SPY had fallen 2.0% between the Nov 12, 8:30 AM CPI release and the start of this window, "
-                                + "then rose 1.0% in this window. No verified catalyst found in EventAlpha's sources."))
+                        "SPY had fallen 2.0% from Nov 11, 4:00 PM to Nov 13, 4:00 PM Eastern, "
+                                + "then rose 1.0% in this window. No verified catalyst found in EventAlpha's sources. "
+                                + "Economic calendar: the Nov 12, 8:30 AM CPI release."))
                 .andExpect(jsonPath("$.data.timeline[?(@.status == 'economic_release')].title")
                         .value(org.hamcrest.Matchers.contains("Consumer Price Index (CPI)")));
     }

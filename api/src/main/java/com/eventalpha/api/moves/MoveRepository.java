@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import com.eventalpha.api.moves.MoveNarrative.Candle;
+import com.eventalpha.api.moves.MoveNarrative.PriceClose;
 import com.eventalpha.api.moves.MoveNarrative.Release;
 import java.util.stream.Stream;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -53,8 +54,8 @@ class MoveRepository {
             """;
 
     private static final String PRICE_BEFORE = """
-            SELECT close FROM price_bars_minute
-            WHERE symbol = :symbol AND started_at < :at AND started_at >= :floor
+            SELECT close, started_at + interval '1 minute' AS closed_at FROM price_bars_minute
+            WHERE symbol = :symbol AND started_at <= :latestStart AND started_at >= :floor
               AND first_seen_at <= :cutoff AND close > 0
             ORDER BY started_at DESC LIMIT 1
             """;
@@ -291,14 +292,15 @@ class MoveRepository {
                 : e).toList();
         var timeline = Stream.concat(articleTimeline.stream(), releases.stream().map(ReleaseRow::evidence))
                 .sorted(Comparator.comparing(Evidence::publishedAt).thenComparing(Evidence::id)).toList();
-        var startPrice = moves.stream().filter(move -> move.symbol().equals(ticker)).map(PriceMove::startPrice)
+        var windowOpen = moves.stream().filter(move -> move.symbol().equals(ticker))
+                .map(move -> new PriceClose(move.measuredStart(), move.startPrice()))
                 .findFirst().orElse(null);
-        var path = startPrice == null ? List.<Candle>of() : path(ticker, start, end, cutoff);
+        var path = windowOpen == null ? List.<Candle>of() : path(ticker, start, end, cutoff);
         var latestBefore = releases.stream().map(ReleaseRow::release).filter(r -> r.at().isBefore(start))
                 .map(Release::at).max(Comparator.naturalOrder()).orElse(null);
-        var priceBeforeRelease = latestBefore == null || path.isEmpty() ? null
+        var priceBeforeRelease = latestBefore == null || path.isEmpty() || !windowOpen.at().isAfter(latestBefore) ? null
                 : priceBefore(ticker, latestBefore, cutoff);
-        String summary = MoveNarrative.summarize(new MoveNarrative.Input(ticker, start, end, catalysts, found, startPrice,
+        String summary = MoveNarrative.summarize(new MoveNarrative.Input(ticker, start, end, catalysts, found, windowOpen,
                 path, releases.stream().map(ReleaseRow::release).toList(), priceBeforeRelease, sectorMovers,
                 INDEX_ETFS.contains(ticker)));
         if (!found.isEmpty()) {
@@ -412,10 +414,12 @@ class MoveRepository {
     }
 
     /** The last price known before a release: the anchor for the descriptive pre-window move. */
-    private BigDecimal priceBefore(String ticker, Instant at, Instant cutoff) {
-        return jdbc.sql(PRICE_BEFORE).param("symbol", ticker).param("at", Timestamp.from(at))
+    private PriceClose priceBefore(String ticker, Instant at, Instant cutoff) {
+        return jdbc.sql(PRICE_BEFORE).param("symbol", ticker)
+                .param("latestStart", Timestamp.from(at.minus(Duration.ofMinutes(1))))
                 .param("floor", Timestamp.from(at.minus(Duration.ofDays(10)))).param("cutoff", Timestamp.from(cutoff))
-                .query(BigDecimal.class).optional().orElse(null);
+                .query((rs, row) -> new PriceClose(Sql.instant(rs, "closed_at"), rs.getBigDecimal("close")))
+                .optional().orElse(null);
     }
 
     private List<Candle> path(String ticker, Instant start, Instant end, Instant cutoff) {

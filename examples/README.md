@@ -49,8 +49,8 @@ the preceding three trading days. It judges whether each article explains the re
 and window in Eastern time. At 0.6 or above, Claude extracts a reason and a supporting excerpt that
 must match the article after normalizing whitespace and quotation marks. Verdicts are cached in Redis per article version
 and target move. Without a catalyst, the summary still describes the price path: the window's move,
-any reversal inside it, and — when releases precede the window — the move between the latest such
-release and the window start, stated as timing and prices only, never as the release causing it.
+any reversal inside it, and, when prices bracket a pre-window release, a comparison labeled with the
+actual candle close times. The release is listed separately as calendar context.
 Economic calendar entries and leading or lagging sectors provide context. Alembic
 backfills standard Eastern times for recognized legacy FRED releases. Date-only entries with no
 known time remain on the calendar and are omitted from intraday explanations.

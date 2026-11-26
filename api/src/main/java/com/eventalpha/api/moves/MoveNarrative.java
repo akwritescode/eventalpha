@@ -31,9 +31,11 @@ final class MoveNarrative {
     /** One minute candle: when it started and its close. */
     record Candle(Instant startedAt, BigDecimal close) {}
 
+    record PriceClose(Instant at, BigDecimal price) {}
+
     record Input(String ticker, Instant start, Instant end, List<Catalyst> catalysts, List<MoveCauses.Cause> causes,
-                 BigDecimal startPrice, List<Candle> path, List<Release> releases,
-                 BigDecimal priceBeforeLatestRelease, SectorMovers sectors, boolean index) {}
+                 PriceClose windowOpen, List<Candle> path, List<Release> releases,
+                 PriceClose beforeRelease, SectorMovers sectors, boolean index) {}
 
     /** The window's path from its start price: total move, low/high and when, and whether it reversed. */
     private record Shape(BigDecimal total, Instant lowAt, Instant highAt, boolean dip, boolean spike,
@@ -41,14 +43,15 @@ final class MoveNarrative {
 
     static String summarize(Input in) {
         String sectors = in.index() ? sectorSentence(in.sectors()) : "";
+        BigDecimal startPrice = in.windowOpen() == null ? null : in.windowOpen().price();
+        boolean noPath = in.path().isEmpty() || startPrice == null || startPrice.signum() <= 0;
         if (!in.catalysts().isEmpty()) {
             return join("Plausible catalyst — " + in.catalysts().getFirst().summary()
                     + ". The timing supports a possible link.", sectors);
         }
         if (!in.causes().isEmpty()) {
             var cause = in.causes().getFirst();
-            String moved = in.path().isEmpty() || in.startPrice() == null || in.startPrice().signum() <= 0 ? ""
-                    : moveWords(pct(in.startPrice(), in.path().getLast().close()));
+            String moved = noPath ? "" : moveWords(pct(startPrice, in.path().getLast().close()));
             String because = "possibly due to " + cause.reason() + " (per “" + cause.title() + "”, JEV "
                     + String.format(Locale.US, "%.2f", cause.probability()) + ").";
             return join(moved.isEmpty() ? "P" + because.substring(1) : in.ticker() + " " + moved + " in this window, " + because,
@@ -59,27 +62,26 @@ final class MoveNarrative {
         var before = group(in.releases().stream().filter(r -> r.at().isBefore(in.start())).toList(), false);
 
         var near = inside != null ? inside : before;
-        boolean noPath = in.path().isEmpty() || in.startPrice() == null || in.startPrice().signum() <= 0;
+        String calendar = near == null ? "" : "Economic calendar: " + label(near, in.start()) + ".";
         if (noPath) {
-            String text = "No verified catalyst found for this move.";
-            if (near != null) text += " Economic calendar: " + label(near, in.start()) + ".";
-            return join(text, sectors);
+            return join(join("No verified catalyst found for this move.", calendar), sectors);
         }
-        var shape = shape(in.startPrice(), in.path());
-        // Purely descriptive: the move between the latest pre-window release and the window
-        // start, stated as timing and prices only, never as the release causing it.
-        BigDecimal pre = in.priceBeforeLatestRelease() != null && in.priceBeforeLatestRelease().signum() > 0
-                ? pct(in.priceBeforeLatestRelease(), in.startPrice()) : null;
-        if (inside == null && before != null && pre != null && pre.abs().compareTo(THRESHOLD) >= 0
-                && !shape.dip() && !shape.spike()) {
-            return join(in.ticker() + " had " + (pre.signum() < 0 ? "fallen " : "risen ") + unsigned(pre)
-                    + " between " + label(before, in.start()) + " and the start of this window, then "
-                    + moveWords(shape.total()) + " in this window. "
-                    + "No verified catalyst found in EventAlpha's sources.", sectors);
-        }
+        var shape = shape(startPrice, in.path());
         String text = priceOnly(in.ticker(), shape);
-        if (near != null) text += " Economic calendar: " + label(near, in.start()) + ".";
-        return join(text, sectors);
+        if (inside == null && before != null && in.beforeRelease() != null && !shape.dip() && !shape.spike()
+                && in.windowOpen().at().isAfter(before.getFirst().at())) {
+            BigDecimal pre = pct(in.beforeRelease().price(), startPrice);
+            if (pre.abs().compareTo(THRESHOLD) >= 0) {
+                text = in.ticker() + " had " + (pre.signum() < 0 ? "fallen " : "risen ") + unsigned(pre)
+                        + " from " + closeTime(in.beforeRelease()) + " to " + closeTime(in.windowOpen()) + " Eastern, then "
+                        + moveWords(shape.total()) + " in this window. No verified catalyst found in EventAlpha's sources.";
+            }
+        }
+        return join(join(text, calendar), sectors);
+    }
+
+    private static String closeTime(PriceClose close) {
+        return DAY.format(close.at()) + ", " + TIME.format(close.at());
     }
 
     private static String moveWords(BigDecimal total) {

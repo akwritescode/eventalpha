@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventalpha.api.moves.MoveNarrative.Candle;
 import com.eventalpha.api.moves.MoveNarrative.Input;
+import com.eventalpha.api.moves.MoveNarrative.PriceClose;
 import com.eventalpha.api.moves.MoveNarrative.Release;
 import com.eventalpha.api.moves.MoveRepository.Catalyst;
 import java.math.BigDecimal;
@@ -24,14 +25,15 @@ class MoveNarrativeTest {
 
     private static Input input(String start, String end, List<Catalyst> catalysts, String startPrice, List<Candle> path,
                                List<Release> releases) {
-        return new Input("SPY", et(start), et(end), catalysts, List.of(), new BigDecimal(startPrice), path, releases,
+        return new Input("SPY", et(start), et(end), catalysts, List.of(), new PriceClose(et(start), new BigDecimal(startPrice)), path, releases,
                 null, null, false);
     }
 
     private static Input inputPre(String start, String end, String priceBeforeLatestRelease, String startPrice,
                                   List<Candle> path, List<Release> releases) {
-        return new Input("SPY", et(start), et(end), List.of(), List.of(), new BigDecimal(startPrice), path, releases,
-                new BigDecimal(priceBeforeLatestRelease), null, false);
+        return new Input("SPY", et(start), et(end), List.of(), List.of(),
+                new PriceClose(et(start), new BigDecimal(startPrice)), path, releases,
+                new PriceClose(et("2026-11-24T16:00:00"), new BigDecimal(priceBeforeLatestRelease)), null, false);
     }
 
     private static final Release CPI = new Release("CPI", et("2026-11-25T10:00:00"), true);
@@ -83,9 +85,22 @@ class MoveNarrativeTest {
         var text = MoveNarrative.summarize(inputPre("2026-11-25T12:00:00", "2026-11-25T14:00:00", "718.50", "701.50",
                 List.of(c("2026-11-25T13:59:00", "716.25")),
                 List.of(new Release("GDP", at, true), new Release("PCE", at, true))));
-        assertThat(text).isEqualTo("SPY had fallen 2.4% between the 8:30 AM GDP and PCE releases and the start of "
-                + "this window, then rose 2.1% in this window. No verified catalyst found in EventAlpha's sources.");
+        assertThat(text).isEqualTo("SPY had fallen 2.4% from Nov 24, 4:00 PM to Nov 25, 12:00 PM Eastern, "
+                + "then rose 2.1% in this window. No verified catalyst found in EventAlpha's sources. "
+                + "Economic calendar: the 8:30 AM GDP and PCE releases.");
         assertThat(text).doesNotContain("dip buying", "profit-taking", "likely", "due to");
+    }
+
+    @Test
+    void omitsThePreWindowComparisonWhenTheOpeningCandleAlsoPrecedesTheRelease() {
+        var start = et("2026-11-25T12:00:00");
+        var end = et("2026-11-25T14:00:00");
+        var text = MoveNarrative.summarize(new Input("SPY", start, end, List.of(), List.of(),
+                new PriceClose(et("2026-11-25T09:45:00"), new BigDecimal("98")),
+                List.of(c("2026-11-25T13:59:00", "99")), List.of(CPI),
+                new PriceClose(et("2026-11-24T16:00:00"), new BigDecimal("100")), null, false));
+        assertThat(text).isEqualTo("SPY rose 1.0% for the window. No verified catalyst found in EventAlpha's sources. "
+                + "Economic calendar: the 10:00 AM CPI release.");
     }
 
     @Test
