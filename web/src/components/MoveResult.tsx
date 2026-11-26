@@ -40,6 +40,7 @@ export type Explanation = {
 const eastern = (options: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', ...options });
 const dayTime = eastern({ month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const calendarStamp = eastern({ month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
 const timeOnly = eastern({ hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
 const precise = eastern({ month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short' });
 const sameDay = (a: string, b: string) =>
@@ -71,7 +72,7 @@ function Returns({ result }: { result: Explanation }) {
   if (!result.priceMoves.length) {
     return (
       <Typography variant="body2" color="text.secondary">
-        Intraday prices unavailable for this ticker and window. The timeline shows available filings and releases.
+        Intraday prices unavailable for this ticker and window.
         Price collection runs every 15 minutes, so recent windows may still be pending.
       </Typography>
     );
@@ -134,6 +135,66 @@ function Returns({ result }: { result: Explanation }) {
   );
 }
 
+function Timeline({ items, anchor }: { items: Evidence[]; anchor: string }) {
+  return (
+    <Box component="ol" sx={{ listStyle: 'none', pl: 0, my: 0 }}>
+      {items.map((item, index) => (
+        <Box component="li" id={`move-${anchor}-${item.id}`} key={item.id}
+          sx={{ position: 'relative', pl: 3, pb: index === items.length - 1 ? 0 : 2, scrollMarginTop: 80 }}>
+          {index < items.length - 1 && (
+            <Box sx={{ position: 'absolute', left: 5, top: 14, bottom: 0, width: '2px', bgcolor: T.border }} />
+          )}
+          <Box sx={{ position: 'absolute', left: 0, top: 6, width: 12, height: 12, borderRadius: '50%',
+            bgcolor: timing[item.timing].color, boxShadow: `0 0 0 3px ${T.raised}` }} />
+          <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
+            <Typography variant="caption" sx={{ color: timing[item.timing].color, fontWeight: 600 }}>{timing[item.timing].label}</Typography>
+            <Typography variant="caption" color={item.status === 'explains_move' ? 'primary' : 'text.secondary'}>
+              {labels[item.status]}{item.causeScore != null ? ` · JEV ${item.causeScore.toFixed(2)}` : ''}
+            </Typography>
+          </Stack>
+          <Typography sx={{ mt: 0.25 }}>
+            {!isXPost(item) && /^https?:\/\//i.test(item.url)
+              ? <Link href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</Link>
+              : item.title}
+            {isXPost(item) && (
+              <> · <Link href={item.url} target="_blank" rel="noopener noreferrer">View X post</Link></>
+            )}
+            {item.originalId && <> · <Link href={`#move-${anchor}-${item.originalId}`}>Original evidence</Link></>}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {item.status === 'economic_release' ? (
+              <>Scheduled release · {calendarStamp.format(new Date(item.publishedAt))}</>
+            ) : (
+              <>Published {stamp(item.publishedAt)} · First seen {stamp(item.firstSeenAt)}
+                {item.verifiedAt && ` · Verified ${stamp(item.verifiedAt)}`}</>
+            )}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+function EconomicCalendar({ releases, anchor }: { releases: Evidence[]; anchor: string }) {
+  // The API returns releases in chronological order.
+  const nearby = releases.find(item => item.timing === 'during') ?? releases[releases.length - 1];
+  const names = Array.from(new Set(releases.filter(item => item.publishedAt === nearby.publishedAt)
+    .map(item => item.title.match(/\(([^()]+)\)$/)?.[1] ?? item.title)));
+  const name = names.length > 3 ? `${names.length} releases` : new Intl.ListFormat('en-US').format(names);
+  const relation = { before: 'Before the move window', during: 'During the move window', after: 'After the move window' };
+  return (
+    <Box component="details" sx={{ mt: 2 }}>
+      <Typography component="summary" color="text.secondary" sx={{ cursor: 'pointer' }}>
+        Economic calendar context
+        <Typography component="span" variant="caption" sx={{ display: 'block', ml: 2 }}>
+          {relation[nearby.timing]} · {name}, {calendarStamp.format(new Date(nearby.publishedAt))}
+        </Typography>
+      </Typography>
+      <Box sx={{ mt: 1 }}><Timeline items={releases} anchor={anchor} /></Box>
+    </Box>
+  );
+}
+
 /** One-line stand-in for an older result in the chat: ticker, window, its return; click to expand. */
 export function MoveResultSummary({ result, onExpand }: { result: Explanation; onExpand: () => void }) {
   const move = result.priceMoves.find(p => p.symbol === result.ticker);
@@ -165,7 +226,7 @@ function isWebUrl(value: string) {
 
 /** A web search's answer, kept apart from EventAlpha's own evidence and labelled as such. */
 function WebSection({ web }: { web: WebSearch }) {
-  if (web.status === 'done' && !web.answer.available) return null;
+  if (web.status === 'done' && (!web.answer.available || !web.answer.answer)) return null;
   return (
     <Box sx={{ mt: 2, p: 1.5, borderRadius: 2, border: `1px dashed ${T.borderStrong}` }} aria-live="polite">
       <Typography variant="overline" color="text.secondary">From a web search · outside EventAlpha's sources</Typography>
@@ -175,7 +236,7 @@ function WebSection({ web }: { web: WebSearch }) {
         </Stack>
       ) : web.status === 'failed' ? (
         <Typography variant="body2" color="text.secondary">Couldn’t search news coverage right now.</Typography>
-      ) : web.answer.answer ? (
+      ) : (
         <>
           <Typography variant="body2">{web.answer.answer}</Typography>
           <Stack direction="row" gap={1.5} flexWrap="wrap" sx={{ mt: 0.75 }}>
@@ -184,8 +245,6 @@ function WebSection({ web }: { web: WebSearch }) {
             ))}
           </Stack>
         </>
-      ) : (
-        <Typography variant="body2" color="text.secondary">No reported cause found in news coverage either.</Typography>
       )}
     </Box>
   );
@@ -196,6 +255,17 @@ export function MoveResult({ result, web }: { result: Explanation; web?: WebSear
   const isDemo = result.ticker === demo.ticker && Date.parse(result.start) === Date.parse(demo.start)
     && Date.parse(result.end) === Date.parse(demo.end);
   const replayed = Date.parse(result.asOf) <= Date.parse(result.end);
+  const evidence = result.timeline.filter(item => item.status !== 'economic_release');
+  const releases = result.timeline.filter(item => item.status === 'economic_release');
+  // The API also includes calendar context in its prose summary. The calendar control displays it here.
+  const summary = releases.length > 0
+    ? result.summary.replace(/(^| )Economic calendar: [^.]+\.(?= |$)/, '').trim()
+    : result.summary;
+  const searchedWithoutCause = web?.status === 'done' && web.answer.available && !web.answer.answer;
+  const conclusion = searchedWithoutCause
+    ? summary.replace(/No verified catalyst found (?:for this move|in EventAlpha's sources)\./,
+      'No specific catalyst was found in EventAlpha’s sources or in news coverage.')
+    : summary;
   const source = (id: string) => <Link href={`#move-${anchor}-${id}`} underline="hover">source</Link>;
 
   return (
@@ -213,8 +283,8 @@ export function MoveResult({ result, web }: { result: Explanation; web?: WebSear
 
       <Box sx={{ mt: 2, pl: 1.5, py: 0.5, borderLeft: `3px solid ${T.amber}` }}>
         <Typography variant="overline" color="text.secondary">What we found</Typography>
-        <Typography>
-          {result.summary}
+        <Typography aria-live="polite">
+          {conclusion}
           {result.catalysts.length === 1 && <> ({source(result.catalysts[0].evidenceId)})</>}
         </Typography>
         {result.catalysts.length > 1 && (
@@ -227,40 +297,14 @@ export function MoveResult({ result, web }: { result: Explanation; web?: WebSear
 
       {web && <WebSection web={web} />}
 
-      <Typography variant="overline" component="h3" color="text.secondary" sx={{ display: 'block', mt: 2 }}>Evidence timeline</Typography>
-      {result.timeline.length === 0 ? <Typography color="text.secondary">No matching evidence in the timeline.</Typography> : (
-        <Box component="ol" sx={{ listStyle: 'none', pl: 0, my: 0 }}>
-          {result.timeline.map((item, index) => (
-            <Box component="li" id={`move-${anchor}-${item.id}`} key={item.id}
-              sx={{ position: 'relative', pl: 3, pb: index === result.timeline.length - 1 ? 0 : 2, scrollMarginTop: 80 }}>
-              {index < result.timeline.length - 1 && (
-                <Box sx={{ position: 'absolute', left: 5, top: 14, bottom: 0, width: '2px', bgcolor: T.border }} />
-              )}
-              <Box sx={{ position: 'absolute', left: 0, top: 6, width: 12, height: 12, borderRadius: '50%',
-                bgcolor: timing[item.timing].color, boxShadow: `0 0 0 3px ${T.raised}` }} />
-              <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
-                <Typography variant="caption" sx={{ color: timing[item.timing].color, fontWeight: 600 }}>{timing[item.timing].label}</Typography>
-                <Typography variant="caption" color={item.status === 'explains_move' ? 'primary' : 'text.secondary'}>
-                  {labels[item.status]}{item.causeScore != null ? ` · JEV ${item.causeScore.toFixed(2)}` : ''}
-                </Typography>
-              </Stack>
-              <Typography sx={{ mt: 0.25 }}>
-                {!isXPost(item) && /^https?:\/\//i.test(item.url)
-                  ? <Link href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</Link>
-                  : item.title}
-                {isXPost(item) && (
-                  <> · <Link href={item.url} target="_blank" rel="noopener noreferrer">View X post</Link></>
-                )}
-                {item.originalId && <> · <Link href={`#move-${anchor}-${item.originalId}`}>Original evidence</Link></>}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Published {stamp(item.publishedAt)} · First seen {stamp(item.firstSeenAt)}
-                {item.verifiedAt && ` · Verified ${stamp(item.verifiedAt)}`}
-              </Typography>
-            </Box>
-          ))}
-        </Box>
+      {(evidence.length > 0 || releases.length === 0) && (
+        <>
+          <Typography variant="overline" component="h3" color="text.secondary" sx={{ display: 'block', mt: 2 }}>Evidence timeline</Typography>
+          {evidence.length > 0 ? <Timeline items={evidence} anchor={anchor} />
+            : <Typography color="text.secondary">No matching evidence in the timeline.</Typography>}
+        </>
       )}
+      {releases.length > 0 && <EconomicCalendar releases={releases} anchor={anchor} />}
     </Box>
   );
 }

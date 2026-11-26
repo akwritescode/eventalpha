@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { Explanation, MoveResult } from './MoveResult';
 
 const base: Explanation = {
@@ -51,6 +51,35 @@ it('hides the web section when the provider is disabled', () => {
   expect(screen.queryByText(/From a web search/)).not.toBeInTheDocument();
 });
 
+it('combines an empty web result with the main conclusion and keeps calendar context collapsed', () => {
+  render(<MoveResult result={{
+    ...base,
+    ticker: 'TSLA',
+    start: '2026-11-25T21:00:00Z',
+    end: '2026-11-26T14:35:00Z',
+    asOf: '2026-11-26T14:36:00Z',
+    summary: "TSLA fell 1% for the window. No verified catalyst found in EventAlpha's sources. Economic calendar: the 8:30 AM GDP release.",
+    catalysts: [],
+    priceMoves: [{ symbol: 'TSLA', returnPercent: -1 }],
+    timeline: [{
+      id: 'release:gdp', title: 'Gross Domestic Product (GDP)', url: 'https://example.com/gdp',
+      publishedAt: '2026-11-25T13:30:00Z', firstSeenAt: '2026-11-20T11:00:09Z', timing: 'before',
+      status: 'economic_release', originalId: null, verifiedAt: null,
+    }],
+  }} web={{ status: 'done', answer: { answer: null, sources: [], available: true } }} />);
+
+  expect(screen.getByText('TSLA fell 1% for the window. No specific catalyst was found in EventAlpha’s sources or in news coverage.'))
+    .toBeInTheDocument();
+  expect(screen.queryByText(/From a web search|No reported cause|Evidence timeline/)).not.toBeInTheDocument();
+  const preview = screen.getByText('Economic calendar context');
+  expect(preview).toHaveTextContent(/Before the move window · GDP, Nov 25,? (?:at )?8:30 AM EST/);
+  expect(preview.closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(preview);
+  expect(preview.closest('details')).toHaveAttribute('open');
+  expect(screen.getByText(/Scheduled release · Nov 25/)).toBeInTheDocument();
+  expect(screen.queryByText(/First seen|Nov 20|Published/)).not.toBeInTheDocument();
+});
+
 it('renders web citations only for HTTP and HTTPS URLs', () => {
   render(<MoveResult result={base} web={{ status: 'done', answer: {
     answer: 'Attributed news coverage.', available: true,
@@ -88,6 +117,7 @@ it('labels releases, commentary and JEV-judged causes without X links', () => {
       publishedAt: '2026-11-25T17:40:00Z', firstSeenAt: '2026-11-25T17:40:00Z', timing: 'during', status: 'explains_move',
       originalId: null, verifiedAt: null, causeScore: 0.98 },
   ] }} />);
+  fireEvent.click(screen.getByText('Economic calendar context'));
   expect(screen.getByText('Economic release')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Personal Income and Outlays (PCE)' })).toHaveAttribute('href', 'https://fred.stlouisfed.org/release?rid=54');
   expect(screen.getByText('Market commentary')).toBeInTheDocument();
