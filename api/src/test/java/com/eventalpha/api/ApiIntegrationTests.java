@@ -378,7 +378,7 @@ class ApiIntegrationTests {
 
     @Test
     @org.springframework.transaction.annotation.Transactional
-    void spyNoonReboundWithoutCatalystUsesSpecificSummary() throws Exception {
+    void spyNoonReboundWithoutReleasesOrNewsSaysNoCatalyst() throws Exception {
         jdbc.sql("""
                 INSERT INTO price_bars_minute (symbol, started_at, open, close, first_seen_at)
                 VALUES ('SPY', '2025-06-10 11:59-04', 500, 500, '2025-06-10 12:00-04'),
@@ -389,7 +389,88 @@ class ApiIntegrationTests {
                         .param("end", "2025-06-10T12:30:00-04:00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
-                .andExpect(jsonPath("$.data.summary").value("No verified catalyst found for the noon rebound."));
+                .andExpect(jsonPath("$.data.summary").value("No verified catalyst found for this move."));
+    }
+
+    /**
+     * Nov 25, 2026 as collected in production: SPY closed 718.50 the day before, gapped down after
+     * the 08:30 GDP and PCE releases, bottomed at 11:15, and rallied from noon. A midday article that
+     * only reports the chip rally is tagged SPY and scored material: it must not be quoted as a cause.
+     */
+    private void loadNov25() {
+        jdbc.sql("""
+                INSERT INTO price_bars_minute (symbol, started_at, open, close, first_seen_at)
+                SELECT symbol, started_at::timestamptz, close, close, now() - interval '1 minute'
+                FROM (VALUES ('SPY', '2026-11-24 15:59-05', 718.50), ('SPY', '2026-11-25 09:30-05', 702.63),
+                             ('SPY', '2026-11-25 11:15-05', 697.89), ('SPY', '2026-11-25 11:59-05', 701.50),
+                             ('SPY', '2026-11-25 12:14-05', 708.01), ('SPY', '2026-11-25 13:45-05', 716.96),
+                             ('SPY', '2026-11-25 13:59-05', 716.25),
+                             ('SMH', '2026-11-25 11:59-05', 400.00), ('SMH', '2026-11-25 13:59-05', 413.20),
+                             ('XLK', '2026-11-25 11:59-05', 250.00), ('XLK', '2026-11-25 13:59-05', 256.50),
+                             ('XLU', '2026-11-25 11:59-05', 80.00), ('XLU', '2026-11-25 13:59-05', 79.68)
+                     ) bar(symbol, started_at, close)
+                """).update();
+        jdbc.sql("""
+                INSERT INTO econ_events (source, event_key, title, event_date, scheduled_at, importance)
+                VALUES ('fred', '53|2026-11-25', 'Gross Domestic Product', '2026-11-25', '2026-11-25 08:30-05', 'high'),
+                       ('fred', '54|2026-11-25', 'Personal Income and Outlays', '2026-11-25', '2026-11-25 08:30-05', 'high'),
+                       ('fred', '180|2026-11-25', 'Unemployment Insurance Weekly Claims Report', '2026-11-25',
+                        '2026-11-25 08:30-05', 'medium')
+                """).update();
+        jdbc.sql("""
+                INSERT INTO articles (id, source, source_id, url, title, body, tickers, published_at, content_hash)
+                VALUES (9001, 'rss:prnewswire_all', 'test-chip-rally', 'https://example.com/chips',
+                        'Chip stocks rally as semiconductor ETF jumps 4% at midday',
+                        'Semiconductor shares rebounded after the Commerce Department said it would delay the proposed '
+                        || 'chip tariffs announced this morning.', '{SPY,SMH}', '2026-11-25 12:30-05', 'chip-rally')
+                """).update();
+        jdbc.sql("""
+                INSERT INTO article_scores (article_id, model, questions_version, sentiment, p_bullish, p_bearish,
+                    p_neutral, sentiment_score, sentiment_confidence, materiality, materiality_confidence,
+                    company_specific, events, scored_at)
+                VALUES (9001, 'typesafe:test', 'v1', 'bullish', 0.9, 0.05, 0.05, 0.8, 0.8, 3.0, 0.8, 0.95, '{}',
+                        '2026-11-25 12:31-05')
+                """).update();
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void noonToTwoRallyIsAReversalOfTheReleaseSellOffNotTheRallyArticle() throws Exception {
+        loadNov25();
+        mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
+                        .param("start", "2026-11-25T12:00:00-05:00")
+                        .param("end", "2026-11-25T14:00:00-05:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
+                .andExpect(jsonPath("$.data.summary").value(
+                        "No news in EventAlpha's sources during this window. SPY had fallen 2.4% after the 8:30 AM "
+                                + "GDP and PCE releases before this window, then reversed, rising 2.1%: likely dip buying "
+                                + "after the release-driven sell-off. Leading sectors: Semiconductors +3.3%, "
+                                + "Technology +2.6%; lagging: Utilities -0.4%."))
+                .andExpect(jsonPath("$.data.summary").value(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("Chip stocks rally"))))
+                .andExpect(jsonPath("$.data.timeline[?(@.id == 'article:9001')].status").value("market_commentary"))
+                .andExpect(jsonPath("$.data.timeline[?(@.status == 'economic_release')].title").value(
+                        org.hamcrest.Matchers.containsInAnyOrder("Gross Domestic Product (GDP)",
+                                "Personal Income and Outlays (PCE)", "Unemployment Insurance Weekly Claims Report "
+                                        + "(jobless claims)")))
+                .andExpect(jsonPath("$.data.timeline[?(@.status == 'economic_release')].timing").value(
+                        org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("before"))));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void nineToTwoNamesThePreOpenReleaseForTheDropAndThenTheReversal() throws Exception {
+        loadNov25();
+        mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
+                        .param("start", "2026-11-25T09:00:00-05:00")
+                        .param("end", "2026-11-25T14:00:00-05:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
+                .andExpect(jsonPath("$.data.summary").value(org.hamcrest.Matchers.startsWith(
+                        "SPY fell 2.9% after the 8:30 AM GDP and PCE releases, bottoming at 11:15 AM, then reversed, "
+                                + "rising 2.6% off the low to end -0.3% for the window. "
+                                + "EventAlpha found no news behind the rebound.")));
     }
 
     @Test

@@ -248,6 +248,21 @@ def test_fred_events_exact_names_only():
     assert [r["title"] for r in rows] == ["Gross Domestic Product"]
 
 
+def test_fred_events_carry_the_agencies_fixed_release_time():
+    from zoneinfo import ZoneInfo
+
+    rows = fred_event_rows([ReleaseDate(54, "Personal Income and Outlays", date(2026, 11, 25))])
+    # 08:30 ET, so the move explainer can tell the release came before a 9:30 open.
+    assert rows[0]["scheduled_at"] == datetime(2026, 11, 25, 8, 30, tzinfo=ZoneInfo("America/New_York"))
+    assert every_fred_release_has_a_time()
+
+
+def every_fred_release_has_a_time() -> bool:
+    from eventalpha.calendars import FRED_IMPORTANCE, FRED_RELEASE_TIMES
+
+    return set(FRED_IMPORTANCE) == set(FRED_RELEASE_TIMES)
+
+
 def test_confirmed_earnings_date_drops_nearby_estimate():
     rows = earnings_rows(
         [

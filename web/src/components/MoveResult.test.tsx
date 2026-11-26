@@ -57,3 +57,18 @@ it('shows ranked sector ETFs with their names and returns', () => {
   expect(screen.getByText('XLP').closest('li')).toHaveTextContent('Consumer staples XLP-2%');
   expect(screen.queryByLabelText('SMH -1%')).not.toBeInTheDocument();
 });
+
+it('labels economic releases and market commentary without X links', () => {
+  render(<MoveResult result={{ ...base, priceMoves: [], timeline: [
+    { id: 'release:fred:54|2026-11-25', title: 'Personal Income and Outlays (PCE)', url: 'https://fred.stlouisfed.org/release?rid=54',
+      publishedAt: '2026-11-25T13:30:00Z', firstSeenAt: '2026-11-25T13:30:00Z', timing: 'before', status: 'economic_release',
+      originalId: null, verifiedAt: null },
+    { id: 'article:9001', title: 'Chip stocks rally as semiconductor ETF jumps 4% at midday', url: 'https://example.com/chips',
+      publishedAt: '2026-11-25T17:30:00Z', firstSeenAt: '2026-11-25T17:30:00Z', timing: 'during', status: 'market_commentary',
+      originalId: null, verifiedAt: null },
+  ] }} />);
+  expect(screen.getByText('Economic release')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Personal Income and Outlays (PCE)' })).toHaveAttribute('href', 'https://fred.stlouisfed.org/release?rid=54');
+  expect(screen.getByText('Market commentary · not a cause')).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'View X post' })).not.toBeInTheDocument();
+});

@@ -43,6 +43,16 @@ windows may span weekends, up to seven days. Minute-bar collection covers the co
 and S&P 500 membership plus benchmarks. Custom-range pickers use the browser's time zone, and
 requests carry UTC timestamps.
 
+The summary reads the window's minute path alongside the evidence. A verified company catalyst comes
+first. Otherwise an economic release inside the window, or one before it that prices hadn't reacted to
+yet (an 08:30 release before the open), is named as the likely driver, and a drop or spike that reversed
+is described as such ("SPY fell 2.9% after the 8:30 AM GDP and PCE releases, bottoming at 11:15 AM,
+then reversed…"). With no news in the window, the latest release up to a day earlier is used, and the
+window's move is called a continuation or a reversal of the move that followed it. Index ETFs (SPY,
+QQQ, DIA) also name their leading and lagging sector ETFs. Headlines that only report a price move
+("Chip stocks rally", "S&P 500 slides at midday") stay in the timeline as market commentary but are
+never treated as a catalyst or quoted as a cause.
+
 Without `ANTHROPIC_API_KEY` the endpoint answers free text with 503 and the chat asks for a ticker
 instead. Questions that reach the model are limited to `EVENTALPHA_ASK_RATE_LIMIT_PER_MINUTE`
 (default 10) per IP, on top of the API's global limit.

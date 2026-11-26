@@ -7,14 +7,17 @@ import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalTime;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import com.eventalpha.api.moves.MoveNarrative.Candle;
+import com.eventalpha.api.moves.MoveNarrative.Release;
 import java.util.stream.Stream;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -34,6 +37,36 @@ class MoveRepository {
             Map.entry("XLRE", "Real estate"), Map.entry("XLK", "Technology"),
             Map.entry("XLU", "Utilities"), Map.entry("SMH", "Semiconductors"), Map.entry("IGV", "Software"));
     private static final int SECTOR_MOVER_LIMIT = 3;
+    /** Index ETFs: their summary names the leading and lagging sectors. */
+    private static final Set<String> INDEX_ETFS = Set.of("SPY", "QQQ", "DIA");
+    /** How far before the window to look for an economic release when nothing is found inside it. */
+    private static final Duration RELEASE_LOOKBACK = Duration.ofDays(1);
+
+    // Scheduled releases have a time (BLS calendar, FOMC 14:00, FRED releases at their agency's
+    // fixed time); 08:30 ET is the fallback for any row loaded before those times were recorded.
+    private static final String RELEASES = """
+            SELECT source, event_key, title, importance, at FROM (
+                SELECT source, event_key, title, importance,
+                       coalesce(scheduled_at, (event_date + time '08:30') AT TIME ZONE 'America/New_York') AS at
+                FROM econ_events WHERE importance IN ('high', 'medium')
+            ) e
+            WHERE at BETWEEN :from AND :to AND at <= :cutoff
+            ORDER BY at, title
+            """;
+
+    private static final String PATH = """
+            SELECT started_at, close FROM price_bars_minute
+            WHERE symbol = :symbol AND started_at >= :start AND started_at < :end
+              AND first_seen_at <= :cutoff AND close > 0
+            ORDER BY started_at
+            """;
+
+    private static final String PRICE_BEFORE = """
+            SELECT close FROM price_bars_minute
+            WHERE symbol = :symbol AND started_at < :at AND started_at >= :floor
+              AND first_seen_at <= :cutoff AND close > 0
+            ORDER BY started_at DESC LIMIT 1
+            """;
 
     // Use a single warehouse snapshot. Replays omit articles that have since been edited
     // because the article store retains only the current version.
@@ -190,22 +223,26 @@ class MoveRepository {
                 .query((rs, row) -> {
                     Instant published = Sql.instant(rs, "published_at");
                     String timing = published.isBefore(start) ? "before" : published.isAfter(end) ? "after" : "during";
+                    // An article that only reports the move ("Chip stocks rally") is shown, but never a cause.
+                    boolean commentary = rs.getString("status").equals("original_source")
+                            && MarketCommentary.isCommentary(rs.getString("title"));
                     var evidence = new Evidence(rs.getString("id"), rs.getString("source"), rs.getString("title"),
                             rs.getString("url"), published, Sql.instant(rs, "first_seen_at"), timing,
-                            rs.getString("status"), rs.getString("original_id"), Sql.instant(rs, "verified_at"));
+                            commentary ? "market_commentary" : rs.getString("status"), rs.getString("original_id"),
+                            Sql.instant(rs, "verified_at"));
                     return new TimelineRow(evidence, Sql.instant(rs, "available_at"),
-                            Sql.nullableDouble(rs, "catalyst_materiality"));
+                            commentary ? null : Sql.nullableDouble(rs, "catalyst_materiality"));
                 }).list();
 
-        var timeline = rows.stream().map(TimelineRow::evidence).toList();
+        List<Evidence> articleTimeline = rows.stream().map(TimelineRow::evidence).toList();
         var originals = new LinkedHashMap<String, Evidence>();
-        for (var item : timeline) {
+        for (var item : articleTimeline) {
             if (item.status().equals("original_source") && !item.timing().equals("after")) {
                 originals.put(item.id(), item);
             }
         }
         var grouped = new LinkedHashMap<String, Catalyst>();
-        for (var item : timeline) {
+        for (var item : articleTimeline) {
             if (item.originalId() != null && originals.containsKey(item.originalId()) && !item.timing().equals("after")) {
                 grouped.putIfAbsent(item.originalId(), new Catalyst(item.title(), item.originalId()));
             }
@@ -220,23 +257,86 @@ class MoveRepository {
                     grouped.putIfAbsent(item.id(), new Catalyst(item.title(), item.id()));
                 });
 
-        var catalysts = List.copyOf(grouped.values());
+        List<Catalyst> catalysts = List.copyOf(grouped.values());
         var prices = priceMoves(ticker, start, end, cutoff);
-        String summary = "No verified catalyst found for this move.";
-        if (!catalysts.isEmpty()) {
-            summary = "Plausible catalyst — " + catalysts.getFirst().summary() + ". The timing supports a possible link.";
-        } else if (ticker.equals("SPY") && start.atZone(NEW_YORK).toLocalTime().equals(LocalTime.NOON)
-                && prices.stream().map(PriceRow::move).anyMatch(move -> move.symbol().equals(ticker)
-                        && move.measuredStart().equals(start) && move.returnPercent().signum() > 0)) {
-            summary = "No verified catalyst found for the noon rebound.";
-        }
         var moves = prices.stream().map(PriceRow::move).toList();
         var sectorMovers = sectorMovers(ticker, moves);
+
+        var releases = releases(start.minus(RELEASE_LOOKBACK), end, cutoff, start, end);
+        var timeline = Stream.concat(articleTimeline.stream(), releases.stream().map(ReleaseRow::evidence))
+                .sorted(Comparator.comparing(Evidence::publishedAt).thenComparing(Evidence::id)).toList();
+        var startPrice = moves.stream().filter(move -> move.symbol().equals(ticker)).map(PriceMove::startPrice)
+                .findFirst().orElse(null);
+        var path = startPrice == null ? List.<Candle>of() : path(ticker, start, end, cutoff);
+        var latestBefore = releases.stream().map(ReleaseRow::release).filter(r -> r.at().isBefore(start))
+                .map(Release::at).max(Comparator.naturalOrder()).orElse(null);
+        var priceBeforeRelease = latestBefore == null || path.isEmpty() ? null : priceBefore(ticker, latestBefore, cutoff);
+        String summary = MoveNarrative.summarize(new MoveNarrative.Input(ticker, start, end, catalysts, startPrice,
+                path, releases.stream().map(ReleaseRow::release).toList(), priceBeforeRelease, sectorMovers,
+                INDEX_ETFS.contains(ticker)));
         Instant freshness = Stream.concat(rows.stream().map(TimelineRow::availableAt),
                 prices.stream().map(PriceRow::availableAt)).max(Comparator.naturalOrder()).orElse(null);
         return ApiResponse.of(new Explanation(ticker, start, end, cutoff, summary, catalysts, timeline,
                 moves.stream().filter(move -> move.symbol().equals(ticker) || BENCHMARKS.contains(move.symbol())).toList(),
                 BENCHMARKS, sectorMovers), freshness);
+    }
+
+    private record ReleaseRow(Release release, Evidence evidence) {}
+
+    /** Economic releases between from and to, as narrative inputs and timeline entries. */
+    private List<ReleaseRow> releases(Instant from, Instant to, Instant cutoff, Instant start, Instant end) {
+        return jdbc.sql(RELEASES)
+                .param("from", Timestamp.from(from)).param("to", Timestamp.from(to)).param("cutoff", Timestamp.from(cutoff))
+                .query((rs, row) -> {
+                    Instant at = Sql.instant(rs, "at");
+                    String title = rs.getString("title");
+                    String name = releaseName(title);
+                    String timing = at.isBefore(start) ? "before" : at.isAfter(end) ? "after" : "during";
+                    var evidence = new Evidence("release:" + rs.getString("source") + ":" + rs.getString("event_key"),
+                            "macro", title.equalsIgnoreCase(name) ? title : title + " (" + name + ")",
+                            releaseUrl(rs.getString("source"), rs.getString("event_key"), title), at, at, timing,
+                            "economic_release", null, null);
+                    return new ReleaseRow(new Release(name, at, rs.getString("importance").equals("high")), evidence);
+                }).list();
+    }
+
+    /** Short names used in summaries: "the 8:30 AM GDP and PCE releases". */
+    static String releaseName(String title) {
+        if (title.startsWith("Gross Domestic Product")) return "GDP";
+        if (title.startsWith("Personal Income and Outlays")) return "PCE";
+        if (title.startsWith("Consumer Price Index")) return "CPI";
+        if (title.startsWith("Producer Price Index")) return "PPI";
+        if (title.startsWith("Employment Situation")) return "jobs report";
+        if (title.startsWith("Unemployment Insurance Weekly Claims")) return "jobless claims";
+        if (title.startsWith("Advance Monthly Sales")) return "retail sales";
+        if (title.startsWith("New Residential Construction")) return "housing starts";
+        if (title.startsWith("Industrial Production")) return "industrial production";
+        if (title.startsWith("Surveys of Consumers")) return "consumer sentiment";
+        if (title.startsWith("Manufacturers' Shipments")) return "factory orders";
+        if (title.startsWith("ADP National Employment")) return "ADP payrolls";
+        if (title.startsWith("Job Openings and Labor Turnover")) return "JOLTS";
+        if (title.startsWith("FOMC")) return "FOMC decision";
+        return title;
+    }
+
+    private static String releaseUrl(String source, String key, String title) {
+        if (title.startsWith("FOMC")) return "https://www.federalreserve.gov/newsevents/pressreleases.htm";
+        if (source.equals("fred")) return "https://fred.stlouisfed.org/release?rid=" + key.split("\\|")[0];
+        if (source.equals("bls")) return "https://www.bls.gov/bls/newsrels.htm";
+        return "";
+    }
+
+    private List<Candle> path(String ticker, Instant start, Instant end, Instant cutoff) {
+        return jdbc.sql(PATH).param("symbol", ticker).param("start", Timestamp.from(start))
+                .param("end", Timestamp.from(end)).param("cutoff", Timestamp.from(cutoff))
+                .query((rs, row) -> new Candle(Sql.instant(rs, "started_at"), rs.getBigDecimal("close"))).list();
+    }
+
+    /** The last price known before a release: what the market's reaction is measured from. */
+    private BigDecimal priceBefore(String ticker, Instant at, Instant cutoff) {
+        return jdbc.sql(PRICE_BEFORE).param("symbol", ticker).param("at", Timestamp.from(at))
+                .param("floor", Timestamp.from(at.minus(Duration.ofDays(4)))).param("cutoff", Timestamp.from(cutoff))
+                .query(BigDecimal.class).optional().orElse(null);
     }
 
     private SectorMovers sectorMovers(String ticker, List<PriceMove> moves) {

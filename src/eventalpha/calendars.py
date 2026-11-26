@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime, time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from eventalpha.macro.bls import ScheduledRelease
 from eventalpha.macro.fred import ReleaseDate
@@ -35,6 +36,20 @@ FRED_IMPORTANCE: dict[str, str] = {
     "Manufacturers' Shipments, Inventories, and Orders": "medium",
     "ADP National Employment Report": "medium",
 }
+# FRED gives release dates only. These agencies publish at fixed ET times, so the move
+# explainer can place a release before or inside a price window (e.g. PCE at 08:30).
+FRED_RELEASE_TIMES: dict[str, time] = {
+    "Gross Domestic Product": time(8, 30),  # BEA
+    "Personal Income and Outlays": time(8, 30),  # BEA
+    "Advance Monthly Sales for Retail and Food Services": time(8, 30),  # Census
+    "Unemployment Insurance Weekly Claims Report": time(8, 30),  # DOL
+    "New Residential Construction": time(8, 30),  # Census
+    "Industrial Production and Capacity Utilization": time(9, 15),  # Federal Reserve
+    "Surveys of Consumers": time(10, 0),  # University of Michigan
+    "Manufacturers' Shipments, Inventories, and Orders": time(10, 0),  # Census
+    "ADP National Employment Report": time(8, 15),
+}
+NY = ZoneInfo("America/New_York")
 FOMC_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
 _MONTHS = {
     m: i
@@ -84,6 +99,7 @@ def fred_event_rows(releases: list[ReleaseDate]) -> list[dict[str, Any]]:
     rows = []
     for r in releases:
         importance = FRED_IMPORTANCE.get(r.name)
+        at = FRED_RELEASE_TIMES.get(r.name)
         if importance:
             rows.append(
                 {
@@ -91,7 +107,7 @@ def fred_event_rows(releases: list[ReleaseDate]) -> list[dict[str, Any]]:
                     "event_key": _key(str(r.release_id), r.day.isoformat()),
                     "title": r.name,
                     "event_date": r.day,
-                    "scheduled_at": None,
+                    "scheduled_at": datetime.combine(r.day, at, NY) if at else None,
                     "importance": importance,
                 }
             )

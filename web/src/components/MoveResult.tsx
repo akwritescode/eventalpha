@@ -14,7 +14,7 @@ type Evidence = {
   publishedAt: string;
   firstSeenAt: string;
   timing: 'before' | 'during' | 'after';
-  status: 'original_source' | 'verified_discovery' | 'unverified_lead';
+  status: 'original_source' | 'verified_discovery' | 'unverified_lead' | 'economic_release' | 'market_commentary';
   originalId: string | null;
   verifiedAt: string | null;
 };
@@ -49,10 +49,14 @@ export const windowLabel = (start: string, end: string) =>
 const stamp = (iso: string) => precise.format(new Date(iso));
 const percent = new Intl.NumberFormat('en-US', { style: 'percent', signDisplay: 'exceptZero', maximumFractionDigits: 2 });
 
+const isXPost = (item: Evidence) => item.status === 'verified_discovery' || item.status === 'unverified_lead';
+
 const labels: Record<Evidence['status'], string> = {
   original_source: 'Original source',
   verified_discovery: 'X discovery',
   unverified_lead: 'Unverified X lead',
+  economic_release: 'Economic release',
+  market_commentary: 'Market commentary · not a cause',
 };
 const timing: Record<Evidence['timing'], { label: string; color: string }> = {
   before: { label: 'Before', color: T.fgSecondary },
@@ -194,10 +198,10 @@ export function MoveResult({ result }: { result: Explanation }) {
                 <Typography variant="caption" color="text.secondary">{labels[item.status]}</Typography>
               </Stack>
               <Typography sx={{ mt: 0.25 }}>
-                {item.status === 'original_source' && /^https?:\/\//i.test(item.url)
+                {!isXPost(item) && /^https?:\/\//i.test(item.url)
                   ? <Link href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</Link>
                   : item.title}
-                {item.status !== 'original_source' && (
+                {isXPost(item) && (
                   <> · <Link href={item.url} target="_blank" rel="noopener noreferrer">View X post</Link></>
                 )}
                 {item.originalId && <> · <Link href={`#move-${anchor}-${item.originalId}`}>Original evidence</Link></>}
