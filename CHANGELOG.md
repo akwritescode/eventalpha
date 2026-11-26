@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.7.0](https://github.com/akwritescode/eventalpha/compare/v0.6.0...v0.7.0) (2026-11-26)
+
+
+### Features
+
+* **moves:** explain moves with macro releases and the price path ([3bdb666](https://github.com/akwritescode/eventalpha/commit/3bdb6664ce86d57637f6c9faa69d6c16fe722c8e))
+* **moves:** fall back to a cited web search when our sources are silent ([36b913e](https://github.com/akwritescode/eventalpha/commit/36b913e29de0f374d6aa99c712930c1c5ca1bc82))
+* **moves:** ground explanations and add model evals ([87be3b3](https://github.com/akwritescode/eventalpha/commit/87be3b3e2fdc0c5517ebc0f54b0cf0219da5fbea))
+* **moves:** let JEV judge whether articles explain a move ([ebad287](https://github.com/akwritescode/eventalpha/commit/ebad2870c7ee1195c4cbd27911653f8020aaac2e))
+* **moves:** look back three trading days for releases and articles ([feb8ae5](https://github.com/akwritescode/eventalpha/commit/feb8ae545b69b13def0c3a4b845497fd145a1080))
+* **moves:** pass measured returns to models and compare verdicts ([bc7b888](https://github.com/akwritescode/eventalpha/commit/bc7b888585277a7feb1db8299e186ad3f137e6c3))
+* **moves:** rank sector ETF gainers and decliners ([504b594](https://github.com/akwritescode/eventalpha/commit/504b594733de3c8dcc4e8e3e09c417cd144b7573))
+
+
+### Bug fixes
+
+* **moves:** describe the price path without assigning a cause ([c55798f](https://github.com/akwritescode/eventalpha/commit/c55798fc7f304695193db2068a0b34cab37f4eeb))
+* **moves:** handle web search failures and cached answers ([bc9c562](https://github.com/akwritescode/eventalpha/commit/bc9c562994228419b4de1d03b278e9a87222762f))
+* **moves:** label pre-window returns with candle times ([1c69177](https://github.com/akwritescode/eventalpha/commit/1c69177d270facb910d35f95c5cbf67cd09179d0))
+* **moves:** stabilize eval imports and model inputs ([83c3f86](https://github.com/akwritescode/eventalpha/commit/83c3f86d2ec6df1c26a40b35beb0aef1ea238a9e))
+
 ## [0.6.0](https://github.com/akwritescode/eventalpha/compare/v0.5.0...v0.6.0) (2026-11-25)
 
 
