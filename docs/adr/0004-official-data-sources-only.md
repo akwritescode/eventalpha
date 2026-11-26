@@ -31,5 +31,6 @@ When EventAlpha's own sources identify no catalyst, the web app can ask
 service, not scraping) and returns a short summary with citations. The answer is shown apart from
 EventAlpha's evidence, labelled "From a web search · outside EventAlpha's sources", with titles and
 links only, in line with the decision above. An answer without citations is discarded, replays never
-search (later coverage would leak hindsight), and results are cached for a day and rate limited per IP.
+search (later coverage would leak hindsight), and results are cached for a day. Only cache misses
+count toward the per-IP rate limit.
 Economic calendar entries and sector returns provide context and do not prevent this fallback.

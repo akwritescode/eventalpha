@@ -41,6 +41,13 @@ class WebMoveSearchTest {
     }
 
     @Test
+    void nonethelessIsNotTheNoneSentinel() {
+        String text = "Nonetheless, reports said the tariff delay drove the rebound.";
+        assertThat(WebMoveSearch.parse(List.of(cited(text, "https://example.com/a", "Report"))).answer())
+                .isEqualTo(text);
+    }
+
+    @Test
     void requestUsesTheBasicWebSearchToolAndTheMoveAsData() {
         var params = WebMoveSearch.params("claude-haiku-5-5", "SPY rose 2.1% between 12:00 PM and 2:00 PM ET");
         assertThat(params.tools().orElseThrow()).hasSize(1);

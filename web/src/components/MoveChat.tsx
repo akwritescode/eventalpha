@@ -7,7 +7,7 @@ import { ApiError } from '../api';
 import { ChatContext, Conversation, deleteConversation, loadConversations, newConversationId, saveConversation, Turn } from '../conversations';
 import { askMoveQuery, fetchExplanation, fetchWebSearch, frameWindow, MINUTE_MS, MoveWindow, TickerOption, TIME_FRAMES, TimeFrame, windowError } from '../moveInput';
 import { MONO, T } from '../theme';
-import { Explanation, MoveResult, MoveResultSummary, WebAnswer, windowLabel } from './MoveResult';
+import { Explanation, MoveResult, MoveResultSummary, WebSearch, windowLabel } from './MoveResult';
 import { ConversationList } from './ConversationList';
 import { DateRange, DateRangeField } from './DateRangeField';
 import { Panel } from './ui';
@@ -99,9 +99,9 @@ export function MoveChat() {
 
   /** EventAlpha's sources found nothing: ask a web search, then fill in the same reply. */
   function searchWeb(originId: string, replyId: number, result: Explanation) {
-    const settle = (answer: WebAnswer) => {
+    const settle = (web: WebSearch) => {
       const withAnswer = (all: Turn[]) => all.map(turn => (turn.id === replyId && turn.role === 'assistant'
-        ? { ...turn, web: { status: 'done' as const, answer } } : turn));
+        ? { ...turn, web } : turn));
       if (latest.current.conversationId !== originId) {
         const origin = loadConversations().find(c => c.id === originId);
         if (origin) setConversations(saveConversation({ ...origin, turns: withAnswer(origin.turns) }));
@@ -111,8 +111,8 @@ export function MoveChat() {
       setSaveTick(n => n + 1);
     };
     fetchWebSearch(result.ticker, { start: result.start, end: result.end })
-      .then(({ data }) => settle(data))
-      .catch(() => settle({ answer: null, sources: [], available: false }));
+      .then(({ data }) => settle({ status: 'done', answer: data }))
+      .catch(() => settle({ status: 'failed' }));
   }
 
   async function explain(ticker: string, window: MoveWindow, asOfEnd: boolean, name?: string) {

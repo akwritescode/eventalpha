@@ -46,6 +46,20 @@ it('marks a replay and explains missing prices and evidence', () => {
   expect(screen.getByText(/Intraday prices unavailable for this ticker and window/)).toBeInTheDocument();
 });
 
+it('hides the web section when the provider is disabled', () => {
+  render(<MoveResult result={base} web={{ status: 'done', answer: { answer: null, sources: [], available: false } }} />);
+  expect(screen.queryByText(/From a web search/)).not.toBeInTheDocument();
+});
+
+it('renders web citations only for HTTP and HTTPS URLs', () => {
+  render(<MoveResult result={base} web={{ status: 'done', answer: {
+    answer: 'Attributed news coverage.', available: true,
+    sources: [{ title: 'Report', url: 'https://example.com/report' }, { title: 'Unsafe', url: 'javascript:alert(1)' }],
+  } }} />);
+  expect(screen.getByRole('link', { name: 'Report' })).toHaveAttribute('href', 'https://example.com/report');
+  expect(screen.queryByRole('link', { name: 'Unsafe' })).not.toBeInTheDocument();
+});
+
 it('shows ranked sector ETFs with their names and returns', () => {
   render(<MoveResult result={{ ...base, timeline: [], sectorMovers: {
     gainers: [{ sector: 'Software', price: { symbol: 'IGV', returnPercent: 3 } }],

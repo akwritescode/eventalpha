@@ -232,6 +232,16 @@ it('saves a pending web answer to the conversation that requested it', async () 
   expect(thread().getByText('SPY coverage.')).toBeInTheDocument();
 });
 
+it.each([new api.ApiError(429), new TypeError('Network error')])('shows a failed search without hiding the move result (%s)', async (error) => {
+  api.postJson.mockReturnValue(query({ ticker: 'SPY', start: '2026-11-25T17:00:00Z', end: '2026-11-25T19:00:00Z' }));
+  api.getJson.mockImplementation((path: string) => path.includes('/move-web-search?') ? Promise.reject(error)
+    : explanation(path).then(r => ({ data: { ...r.data, foundInSources: false } })));
+  render(<MoveChat />);
+  await ask('Why did SPY rise?');
+  expect(thread().getByText('Couldn’t search news coverage right now.')).toBeInTheDocument();
+  expect(thread().getByText('No verified catalyst found for this move.')).toBeInTheDocument();
+});
+
 it('asks a web search only when our sources found nothing, never for a replay', async () => {
   api.postJson.mockReturnValue(query({ ticker: 'SPY', start: '2026-11-25T17:00:00Z', end: '2026-11-25T19:00:00Z' }));
   api.getJson.mockImplementation((path: string) => {
