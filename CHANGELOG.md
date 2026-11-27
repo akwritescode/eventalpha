@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/akwritescode/eventalpha/compare/v0.7.1...v0.8.0) (2026-11-27)
+
+
+### Features
+
+* **moves:** scope catalyst search and anchor returns to evidence ([ccd78ad](https://github.com/akwritescode/eventalpha/commit/ccd78ad961ef1ceb6e4800895a971e1612ff9520))
+
 ## [0.7.1](https://github.com/akwritescode/eventalpha/compare/v0.7.0...v0.7.1) (2026-11-26)
 
 
