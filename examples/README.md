@@ -43,24 +43,25 @@ windows may span weekends, up to seven days. Minute-bar collection covers the co
 and S&P 500 membership plus benchmarks. Custom-range pickers use the browser's time zone, and
 requests carry UTC timestamps.
 
-The summary reads the window's minute path alongside the evidence. A verified company catalyst comes
-first. Otherwise JEV reads the titles and bodies of up to three candidate articles from the window and
-the preceding three trading days. It judges whether each article explains the requested ticker, direction,
-and window in Eastern time. When candle data is available, JEV and Claude also receive the measured
-return and actual candle close times to identify the move. At 0.6 or above, Claude extracts a reason and a supporting excerpt that
-must match the article after normalizing whitespace and quotation marks. Verdicts are cached in Redis per article version
-and target move. Without a catalyst, the summary still describes the price path: the window's move,
-any reversal inside it, and, when prices bracket a pre-window release, a comparison labeled with the
-actual candle close times. The release is listed separately as calendar context.
-Economic calendar entries and leading or lagging sectors provide context. Alembic
+The summary reads the window's minute bars alongside the evidence. An in-window company catalyst
+comes first. JEV can judge the titles and bodies of up to three candidate articles against the ticker,
+direction, and selected window in Eastern time. At 0.6 or above, Claude extracts a reason and a
+supporting excerpt that must match the article after normalizing whitespace and quotation marks.
+Verdicts are cached in Redis per article version and target move. Earlier coverage and economic
+calendar context are eligible only when the price moves more than 1% away from the starting close,
+even if it later reverses. When a catalyst or release is shown, the return cards use its timestamp
+as the anchor for the ticker, its mapped sector ETF, and SPY. The exchange calendar supplies a
+closure message when a closed session explains missing prices. Alembic
 backfills standard Eastern times for recognized legacy FRED releases. Date-only entries with no
 known time remain on the calendar and are omitted from intraday explanations.
 
-When warehouse evidence provides no catalyst, the
-web app asks `GET /api/v1/tickers/{ticker}/move-web-search`: Claude searches news coverage of the window
-and the answer is shown apart from EventAlpha's evidence, labelled as a web search, with its sources.
+When the warehouse has no in-window catalyst, the web app asks
+`GET /api/v1/tickers/{ticker}/move-web-search`. Claude searches the selected window first. Cited
+coverage appears under **From the web**, with a publication time when the citation supports it.
+Economic calendar context appears only after the ticker-specific evidence checks yield no cause.
 Uncited answers are dropped, replays never search, and results are cached for a day and limited to
-`EVENTALPHA_WEB_SEARCH_RATE_LIMIT_PER_MINUTE` (default 5) per IP. See ADR 0004's amendment.
+`EVENTALPHA_WEB_SEARCH_RATE_LIMIT_PER_MINUTE` (default 5 uncached requests) per IP. An eligible
+request can make an in-window search and one lookback search. See ADR 0004's amendment.
 
 Without `ANTHROPIC_API_KEY` the endpoint answers free text with 503 and the chat asks for a ticker
 instead. Questions that reach the model are limited to `EVENTALPHA_ASK_RATE_LIMIT_PER_MINUTE`

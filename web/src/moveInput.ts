@@ -65,8 +65,10 @@ export async function frameWindow(frame: TimeFrame): Promise<MoveWindow | string
 }
 
 /** News coverage from a web search, for moves EventAlpha's own sources don't explain. */
-export function fetchWebSearch(ticker: string, window: MoveWindow) {
-  return getJson<WebAnswer>(`/api/v1/tickers/${encodeURIComponent(ticker)}/move-web-search?${new URLSearchParams(window)}`);
+export function fetchWebSearch(ticker: string, window: MoveWindow, inWindowOnly = false) {
+  const params = new URLSearchParams(window);
+  if (inWindowOnly) params.set('inWindowOnly', 'true');
+  return getJson<WebAnswer>(`/api/v1/tickers/${encodeURIComponent(ticker)}/move-web-search?${params}`);
 }
 
 export function fetchExplanation(ticker: string, window: MoveWindow, replay = false) {

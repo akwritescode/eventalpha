@@ -29,7 +29,7 @@ class MoveRepository {
 
     private static final ZoneId NEW_YORK = ZoneId.of("America/New_York");
     private static final Duration CONTEXT = Duration.ofDays(1);
-    private static final List<String> BENCHMARKS = List.of("SPY", "SMH");
+    private static final BigDecimal LOOKBACK_THRESHOLD = new BigDecimal("1");
     // Keep aligned with the minute-candle collection universe.
     private static final Map<String, String> SECTOR_ETFS = Map.ofEntries(
             Map.entry("XLC", "Communication services"), Map.entry("XLY", "Consumer discretionary"),
@@ -61,7 +61,9 @@ class MoveRepository {
             """;
 
     private static final String PATH = """
-            SELECT started_at, close FROM price_bars_minute
+            SELECT started_at, close, GREATEST(close, high, open) AS high,
+                   LEAST(close, CASE WHEN low > 0 THEN low END, CASE WHEN open > 0 THEN open END) AS low
+            FROM price_bars_minute
             WHERE symbol = :symbol AND started_at >= :start AND started_at < :end
               AND first_seen_at <= :cutoff AND close > 0
             ORDER BY started_at
@@ -134,7 +136,7 @@ class MoveRepository {
             JOIN LATERAL (
                 SELECT close, started_at, first_seen_at FROM price_bars_minute
                 WHERE symbol = opening.symbol AND started_at < :end
-                  AND started_at >= :start AND first_seen_at <= :cutoff
+                  AND started_at >= :start AND first_seen_at <= :cutoff AND close > 0
                 ORDER BY started_at DESC LIMIT 1
             ) closing ON true
             """;
@@ -211,12 +213,16 @@ class MoveRepository {
 
     record SectorMovers(List<SectorMove> gainers, List<SectorMove> decliners) {}
 
+    record ReturnComparison(Instant since, List<PriceMove> priceMoves) {}
+
     // foundInSources is true only when the warehouse establishes a catalyst candidate. Calendar
     // context alone must not suppress the frontend's web-search fallback for live requests.
     record Explanation(String ticker, Instant start, Instant end, Instant asOf, String summary,
                        List<Catalyst> catalysts, List<Evidence> timeline, List<PriceMove> priceMoves,
                        List<String> benchmarks, SectorMovers sectorMovers, boolean foundInSources,
-                       List<String> candidateEvidenceIds) {}
+                       List<String> candidateEvidenceIds, String priceUnavailableReason,
+                       boolean lookbackEligible, String windowSummary, ReturnComparison catalystComparison,
+                       ReturnComparison economicComparison) {}
 
     private record TimelineRow(Evidence evidence, Instant availableAt, Double catalystMateriality, String body,
                                String contentHash, boolean directMatch) {}
@@ -225,8 +231,14 @@ class MoveRepository {
 
     ApiResponse<Explanation> explain(String ticker, Instant start, Instant end, Instant cutoff) {
         Instant floor = lookbackFloor(start);
-        // Verified catalysts stay within a day of the window; older articles only feed JEV and the narrative.
-        Instant catalystFloor = start.minus(CONTEXT);
+        var benchmarks = MoveBenchmarks.forTicker(ticker);
+        var prices = priceMoves(ticker, start, end, cutoff);
+        var moves = prices.stream().map(PriceRow::move).toList();
+        var tickerMove = moves.stream().filter(move -> move.symbol().equals(ticker)).findFirst().orElse(null);
+        var windowOpen = tickerMove == null ? null : new PriceClose(tickerMove.measuredStart(), tickerMove.startPrice());
+        var path = windowOpen == null ? List.<Candle>of() : path(ticker, start, end, cutoff);
+        boolean lookbackEligible = materialExcursion(tickerMove, path);
+        Instant catalystFloor = lookbackEligible ? start.minus(CONTEXT) : start;
         var rows = jdbc.sql(TIMELINE)
                 .param("ticker", ticker)
                 .param("includeMarketNews", INDEX_ETFS.contains(ticker))
@@ -274,19 +286,30 @@ class MoveRepository {
                     grouped.putIfAbsent(item.id(), new Catalyst(item.title(), item.id()));
                 });
 
-        List<Catalyst> catalysts = List.copyOf(grouped.values());
-        var prices = priceMoves(ticker, start, end, cutoff);
-        var moves = prices.stream().map(PriceRow::move).toList();
-        var tickerMove = moves.stream().filter(move -> move.symbol().equals(ticker)).findFirst().orElse(null);
-        var sectorMovers = sectorMovers(ticker, moves);
+        List<Catalyst> catalysts = grouped.values().stream()
+                .filter(c -> originals.containsKey(c.evidenceId()) && !originals.get(c.evidenceId()).publishedAt().isBefore(start))
+                .toList();
+        var sectorMovers = INDEX_ETFS.contains(ticker) ? sectorMovers(ticker, moves) : null;
 
-        var releases = releases(floor, end, cutoff, start, end);
+        var releases = releases(lookbackEligible ? floor : start, end, cutoff, start, end);
         // No verified catalyst: ask JEV whether nearby articles explain the move (title + body).
-        var shortlist = candidates(rows, floor);
+        var shortlist = candidates(rows, lookbackEligible ? floor : start);
         var measured = tickerMove == null ? null : new MoveCauses.MeasuredReturn(tickerMove.measuredStart(),
                 tickerMove.measuredEnd(), tickerMove.returnPercent());
-        var found = catalysts.isEmpty()
-                ? causes.judge(ticker, start, end, measured, shortlist) : List.<MoveCauses.Cause>of();
+        var found = List.<MoveCauses.Cause>of();
+        if (catalysts.isEmpty()) {
+            var inWindow = articleTimeline.stream().filter(e -> e.timing().equals("during"))
+                    .map(Evidence::id).collect(java.util.stream.Collectors.toSet());
+            found = judge(ticker, start, end, measured,
+                    shortlist.stream().filter(c -> inWindow.contains(c.evidenceId())).toList());
+            if (found.isEmpty()) {
+                catalysts = List.copyOf(grouped.values());
+                if (catalysts.isEmpty() && lookbackEligible) {
+                    found = judge(ticker, start, end, measured,
+                            shortlist.stream().filter(c -> !inWindow.contains(c.evidenceId())).toList());
+                }
+            }
+        }
         var scores = found.stream().collect(java.util.stream.Collectors.toMap(MoveCauses.Cause::evidenceId,
                 MoveCauses.Cause::probability));
         articleTimeline = articleTimeline.stream().map(e -> scores.containsKey(e.id())
@@ -295,33 +318,104 @@ class MoveRepository {
                 : e).toList();
         var timeline = Stream.concat(articleTimeline.stream(), releases.stream().map(ReleaseRow::evidence))
                 .sorted(Comparator.comparing(Evidence::publishedAt).thenComparing(Evidence::id)).toList();
-        var windowOpen = tickerMove == null ? null : new PriceClose(tickerMove.measuredStart(), tickerMove.startPrice());
-        var path = windowOpen == null ? List.<Candle>of() : path(ticker, start, end, cutoff);
         var latestBefore = releases.stream().map(ReleaseRow::release).filter(r -> r.at().isBefore(start))
                 .map(Release::at).max(Comparator.naturalOrder()).orElse(null);
         var priceBeforeRelease = latestBefore == null || path.isEmpty() || !windowOpen.at().isAfter(latestBefore) ? null
                 : priceBefore(ticker, latestBefore, cutoff);
-        String summary = MoveNarrative.summarize(new MoveNarrative.Input(ticker, start, end, catalysts, found, windowOpen,
+        var narrative = new MoveNarrative.Input(ticker, start, end, catalysts, found, windowOpen,
                 path, releases.stream().map(ReleaseRow::release).toList(), priceBeforeRelease, sectorMovers,
-                INDEX_ETFS.contains(ticker)));
+                INDEX_ETFS.contains(ticker));
+        String summary = MoveNarrative.summarize(narrative);
         if (!found.isEmpty()) {
             catalysts = found.stream().map(c -> new Catalyst(c.reason(), c.evidenceId())).toList();
         }
+        Instant catalystAt = null;
+        if (!catalysts.isEmpty()) {
+            String primaryId = catalysts.getFirst().evidenceId();
+            catalystAt = timeline.stream().filter(e -> e.id().equals(primaryId)).map(Evidence::publishedAt)
+                    .findFirst().orElse(null);
+        }
+        Instant economicAt = lookbackEligible && catalysts.isEmpty()
+                ? releases.stream().map(ReleaseRow::release).map(Release::at).filter(at -> !at.isBefore(start))
+                        .findFirst().orElse(latestBefore)
+                : null;
         Instant freshness = Stream.concat(Stream.concat(rows.stream().map(TimelineRow::availableAt),
                         prices.stream().map(PriceRow::availableAt)),
                 releases.stream().map(row -> row.evidence().firstSeenAt())).max(Comparator.naturalOrder()).orElse(null);
         return ApiResponse.of(new Explanation(ticker, start, end, cutoff, summary, catalysts, timeline,
-                moves.stream().filter(move -> move.symbol().equals(ticker) || BENCHMARKS.contains(move.symbol())).toList(),
-                BENCHMARKS, sectorMovers, !catalysts.isEmpty(),
-                shortlist.stream().map(MoveCauses.Candidate::evidenceId).toList()), freshness);
+                displayMoves(ticker, benchmarks, moves), benchmarks, sectorMovers, !catalysts.isEmpty(),
+                shortlist.stream().map(MoveCauses.Candidate::evidenceId).toList(),
+                tickerMove == null ? marketClosure(start, end) : null, lookbackEligible, MoveNarrative.windowSummary(narrative),
+                returnsSince(ticker, catalystAt, end, cutoff), returnsSince(ticker, economicAt, end, cutoff)), freshness);
+    }
+
+    private List<MoveCauses.Cause> judge(String ticker, Instant start, Instant end,
+            MoveCauses.MeasuredReturn measured, List<MoveCauses.Candidate> shortlist) {
+        return shortlist.isEmpty() ? List.of() : causes.judge(ticker, start, end, measured, shortlist);
+    }
+
+    private String marketClosure(Instant start, Instant end) {
+        var first = start.atZone(NEW_YORK).toLocalDate();
+        var last = end.atZone(NEW_YORK).toLocalDate();
+        var days = jdbc.sql("""
+                SELECT day, is_open, open_time, close_time, description FROM market_sessions
+                WHERE day BETWEEN :first AND :last ORDER BY day
+                """).param("first", first).param("last", last)
+                .query((rs, row) -> new CalendarDay(rs.getObject("day", LocalDate.class), rs.getBoolean("is_open"),
+                        rs.getObject("open_time", LocalTime.class), rs.getObject("close_time", LocalTime.class),
+                        rs.getString("description"))).list();
+        if (days.size() != ChronoUnit.DAYS.between(first, last) + 1 || days.getLast().open()) return null;
+        for (var day : days) {
+            if (!day.open()) continue;
+            if (day.opensAt() == null || day.closesAt() == null) return null;
+            var open = day.day().atTime(day.opensAt()).atZone(NEW_YORK).toInstant();
+            var close = day.day().atTime(day.closesAt()).atZone(NEW_YORK).toInstant();
+            if (start.isBefore(close) && end.isAfter(open)) return null;
+        }
+        String description = days.getLast().description().strip();
+        return description.isBlank() || description.equalsIgnoreCase("closed") || description.equalsIgnoreCase("market closed")
+                ? "U.S. markets were closed. No new prices are available for this window."
+                : "U.S. markets were closed (" + description + "). No new prices are available for this window.";
+    }
+
+    private record CalendarDay(LocalDate day, boolean open, LocalTime opensAt, LocalTime closesAt, String description) {}
+
+    boolean canLookBack(String ticker, Instant start, Instant end, Instant cutoff, Optional<PriceMove> move) {
+        return move.isPresent() && materialExcursion(move.get(), path(ticker, start, end, cutoff));
+    }
+
+    private static boolean materialExcursion(PriceMove move, List<Candle> path) {
+        if (move == null) return false;
+        var start = move.startPrice();
+        var threshold = start.multiply(LOOKBACK_THRESHOLD).movePointLeft(2);
+        return path.stream().anyMatch(candle -> candle.high().subtract(start).compareTo(threshold) > 0
+                || start.subtract(candle.low()).compareTo(threshold) > 0);
+    }
+
+    ReturnComparison returnsSince(String ticker, Instant anchor, Instant end, Instant cutoff) {
+        if (anchor == null) return null;
+        // The last close at or before the timestamp is the baseline. Only completed candles
+        // after the event can supply the ending price, even for a publication between minutes.
+        var start = anchor.truncatedTo(ChronoUnit.MINUTES);
+        var completedThrough = end.truncatedTo(ChronoUnit.MINUTES);
+        var benchmarks = MoveBenchmarks.forTicker(ticker);
+        var symbols = Stream.concat(Stream.of(ticker), benchmarks.stream()).distinct().toList();
+        var moves = start.isBefore(completedThrough) && !end.isAfter(cutoff)
+                ? queryPrices(symbols, start, completedThrough, cutoff).stream().map(PriceRow::move).toList()
+                : List.<PriceMove>of();
+        return new ReturnComparison(anchor, moves);
+    }
+
+    private static List<PriceMove> displayMoves(String ticker, List<String> benchmarks, List<PriceMove> moves) {
+        return moves.stream().filter(move -> move.symbol().equals(ticker) || benchmarks.contains(move.symbol())).toList();
     }
 
     private record ReleaseRow(Release release, Evidence evidence) {}
 
     /** The ticker's own move over the window, if minute prices cover it. */
     Optional<PriceMove> windowMove(String ticker, Instant start, Instant end, Instant cutoff) {
-        return priceMoves(ticker, start, end, cutoff).stream().map(PriceRow::move)
-                .filter(move -> move.symbol().equals(ticker)).findFirst();
+        if (!completeWindow(start, end, cutoff)) return Optional.empty();
+        return queryPrices(List.of(ticker), start, end, cutoff).stream().map(PriceRow::move).findFirst();
     }
 
     /**
@@ -427,7 +521,8 @@ class MoveRepository {
     private List<Candle> path(String ticker, Instant start, Instant end, Instant cutoff) {
         return jdbc.sql(PATH).param("symbol", ticker).param("start", Timestamp.from(start))
                 .param("end", Timestamp.from(end)).param("cutoff", Timestamp.from(cutoff))
-                .query((rs, row) -> new Candle(Sql.instant(rs, "started_at"), rs.getBigDecimal("close"))).list();
+                .query((rs, row) -> new Candle(Sql.instant(rs, "started_at"), rs.getBigDecimal("close"),
+                        rs.getBigDecimal("high"), rs.getBigDecimal("low"))).list();
     }
 
     private SectorMovers sectorMovers(String ticker, List<PriceMove> moves) {
@@ -450,14 +545,20 @@ class MoveRepository {
     }
 
     private List<PriceRow> priceMoves(String ticker, Instant start, Instant end, Instant cutoff) {
-        if (end.isAfter(cutoff)
-                || !start.equals(start.truncatedTo(ChronoUnit.MINUTES))
-                || !end.equals(end.truncatedTo(ChronoUnit.MINUTES))
-) {
-            return List.of();
-        }
-        var symbols = Stream.concat(Stream.of(ticker), Stream.concat(BENCHMARKS.stream(), SECTOR_ETFS.keySet().stream()))
+        if (!completeWindow(start, end, cutoff)) return List.of();
+        var benchmarks = MoveBenchmarks.forTicker(ticker);
+        var sectors = INDEX_ETFS.contains(ticker) ? SECTOR_ETFS.keySet().stream() : Stream.<String>empty();
+        var symbols = Stream.concat(Stream.of(ticker), Stream.concat(benchmarks.stream(), sectors))
                 .distinct().toList();
+        return queryPrices(symbols, start, end, cutoff);
+    }
+
+    private static boolean completeWindow(Instant start, Instant end, Instant cutoff) {
+        return !end.isAfter(cutoff) && start.equals(start.truncatedTo(ChronoUnit.MINUTES))
+                && end.equals(end.truncatedTo(ChronoUnit.MINUTES));
+    }
+
+    private List<PriceRow> queryPrices(List<String> symbols, Instant start, Instant end, Instant cutoff) {
         return jdbc.sql(PRICES)
                 .param("symbols", symbols)
                 .param("start", Timestamp.from(start))

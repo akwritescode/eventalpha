@@ -175,7 +175,7 @@ A public, read-only HTTP API (no key; rate limited per IP; `move-query` is the o
 | `GET /api/v1/events?type=guidance_lowered&minProb=0.8` | Items the classifier flags with an event type |
 | `GET /api/v1/tickers/{ticker}/move-explanation?start=…&end=…&asOf=…` | Evidence around a specific move window and an optional replay cutoff. [Try the NVDA fixture](examples/README.md#move-explanation). |
 | `POST /api/v1/move-query` `{"question": "Why did NVDA drop today?"}` | The ticker and move window a chat question refers to, ready for `move-explanation`. Uses Claude when `ANTHROPIC_API_KEY` is set; bare tickers work without it |
-| `GET /api/v1/tickers/{ticker}/move-web-search?start=…&end=…` | For moves EventAlpha's sources don't explain: news coverage from a Claude web search, with citations (labelled as outside EventAlpha's sources) |
+| `GET /api/v1/tickers/{ticker}/move-web-search?start=…&end=…` | Cited news coverage, with publication time and post-publication returns when available. Searches the selected window first |
 | `GET /api/v1/tickers/{ticker}/sentiment?days=30` | Daily sentiment for one ticker |
 | `GET /api/v1/tickers/{ticker}/insider-trades?days=90` | Form 4 transactions and net open-market value |
 | `GET /api/v1/signals/latest` | The latest premarket and SPX overnight signals with their inputs |

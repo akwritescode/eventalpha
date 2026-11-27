@@ -24,12 +24,17 @@ final class MoveNarrative {
     static final BigDecimal THRESHOLD = new BigDecimal("0.30");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("h:mm a", Locale.US).withZone(NEW_YORK);
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("MMM d", Locale.US).withZone(NEW_YORK);
+    private static final String NO_CATALYST = "No verified catalyst found in EventAlpha's sources.";
 
     /** A released economic report: its short name ("PCE", "FOMC decision") and release time. */
     record Release(String name, Instant at, boolean high) {}
 
     /** One minute candle: when it started and its close. */
-    record Candle(Instant startedAt, BigDecimal close) {}
+    record Candle(Instant startedAt, BigDecimal close, BigDecimal high, BigDecimal low) {
+        Candle(Instant startedAt, BigDecimal close) {
+            this(startedAt, close, close, close);
+        }
+    }
 
     record PriceClose(Instant at, BigDecimal price) {}
 
@@ -67,17 +72,24 @@ final class MoveNarrative {
             return join(join("No verified catalyst found for this move.", calendar), sectors);
         }
         var shape = shape(startPrice, in.path());
-        String text = priceOnly(in.ticker(), shape);
+        String text = join(priceOnly(in.ticker(), shape), NO_CATALYST);
         if (inside == null && before != null && in.beforeRelease() != null && !shape.dip() && !shape.spike()
                 && in.windowOpen().at().isAfter(before.getFirst().at())) {
             BigDecimal pre = pct(in.beforeRelease().price(), startPrice);
             if (pre.abs().compareTo(THRESHOLD) >= 0) {
                 text = in.ticker() + " had " + (pre.signum() < 0 ? "fallen " : "risen ") + unsigned(pre)
                         + " from " + closeTime(in.beforeRelease()) + " to " + closeTime(in.windowOpen()) + " Eastern, then "
-                        + moveWords(shape.total()) + " in this window. No verified catalyst found in EventAlpha's sources.";
+                        + moveWords(shape.total()) + " in this window. " + NO_CATALYST;
             }
         }
         return join(join(text, calendar), sectors);
+    }
+
+    static String windowSummary(Input in) {
+        String sectors = in.index() ? sectorSentence(in.sectors()) : "";
+        var open = in.windowOpen();
+        return open == null || open.price().signum() <= 0 || in.path().isEmpty()
+                ? sectors : join(priceOnly(in.ticker(), shape(open.price(), in.path())), sectors);
     }
 
     private static String closeTime(PriceClose close) {
@@ -92,14 +104,13 @@ final class MoveNarrative {
     private static String priceOnly(String ticker, Shape s) {
         if (s.dip()) {
             return ticker + " fell " + unsigned(s.dipPct()) + " to a " + TIME.format(s.lowAt()) + " low, then reversed to end "
-                    + signed(s.total()) + " for the window. No verified catalyst found in EventAlpha's sources.";
+                    + signed(s.total()) + " for the window.";
         }
         if (s.spike()) {
             return ticker + " rose " + unsigned(s.spikePct()) + " to a " + TIME.format(s.highAt()) + " high, then reversed to end "
-                    + signed(s.total()) + " for the window. No verified catalyst found in EventAlpha's sources.";
+                    + signed(s.total()) + " for the window.";
         }
-        return ticker + " " + moveWords(s.total()) + " for the window. "
-                + "No verified catalyst found in EventAlpha's sources.";
+        return ticker + " " + moveWords(s.total()) + " for the window.";
     }
 
     private static Shape shape(BigDecimal start, List<Candle> path) {

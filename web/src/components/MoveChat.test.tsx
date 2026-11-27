@@ -49,8 +49,8 @@ it('explains a question the server resolved to a ticker and window', async () =>
   expect(new URLSearchParams(request.split('?')[1]).get('start')).toBe('2026-11-24T14:30:00Z');
   expect(thread().getByText('Why did Nvidia drop in the last hour?')).toBeInTheDocument();
   expect(screen.getByLabelText('NVDA -1.25%')).toBeInTheDocument();
-  expect(thread().getByText(/EventAlpha found for NVDA/)).toBeInTheDocument();
-  expect(thread().getByText('No verified catalyst found for this move.')).toBeInTheDocument();
+  expect(thread().getByText(/move analysis for NVDA/)).toBeInTheDocument();
+  expect(thread().getByText('No verified catalyst found.')).toBeInTheDocument();
   expect(screen.getByText(/Try another time frame for/)).toBeInTheDocument();
 });
 
@@ -200,16 +200,16 @@ it('pages older questions away and keeps only the newest result open', async () 
   expect(thread().getByText('Question 5')).toBeInTheDocument();
   // Questions 3 and 4 are visible but collapsed; only question 5's result is open.
   expect(screen.getAllByLabelText(/^Show details for NVDA/)).toHaveLength(2);
-  expect(screen.getAllByText('Evidence timeline')).toHaveLength(1);
+  expect(screen.getAllByText(/Evidence available as of/)).toHaveLength(1);
 
   fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages (2 questions)' }));
   expect(thread().getByText('Question 1')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Show earlier messages/ })).not.toBeInTheDocument();
 
   fireEvent.click(screen.getAllByLabelText(/^Show details for NVDA/)[0]);
-  expect(screen.getAllByText('Evidence timeline')).toHaveLength(2);
+  expect(screen.getAllByText(/Evidence available as of/)).toHaveLength(2);
   fireEvent.click(screen.getByRole('button', { name: 'Hide details' }));
-  expect(screen.getAllByText('Evidence timeline')).toHaveLength(1);
+  expect(screen.getAllByText(/Evidence available as of/)).toHaveLength(1);
 
   await ask('Question 6');
   expect(thread().queryByText('Question 1')).not.toBeInTheDocument();
@@ -239,7 +239,7 @@ it.each([new api.ApiError(429), new TypeError('Network error')])('shows a failed
   render(<MoveChat />);
   await ask('Why did SPY rise?');
   expect(thread().getByText('Couldn’t search news coverage right now.')).toBeInTheDocument();
-  expect(thread().getByText('No verified catalyst found for this move.')).toBeInTheDocument();
+  expect(thread().queryByText('No verified catalyst found.')).not.toBeInTheDocument();
 });
 
 it('asks a web search only when our sources found nothing, never for a replay', async () => {
@@ -255,7 +255,7 @@ it('asks a web search only when our sources found nothing, never for a replay', 
   await ask('Why did SPY rise from noon to 2?');
   await flush();
   expect(api.getJson.mock.calls.some(([p]) => p.startsWith('/api/v1/tickers/SPY/move-web-search?'))).toBe(true);
-  expect(screen.getByText(/From a web search · outside EventAlpha/)).toBeInTheDocument();
+  expect(screen.getByText('From the web')).toBeInTheDocument();
   expect(screen.getByText('Reports said AI-stock losses eased and dip buyers stepped in.')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'How major US stock indexes fared' })).toHaveAttribute('href', 'https://example.com/indexes');
   const stored = JSON.parse(window.localStorage.getItem('eventalpha.conversations.v1')!);
@@ -266,4 +266,22 @@ it('asks a web search only when our sources found nothing, never for a replay', 
   await ask('What was known by then?');
   await flush();
   expect(api.getJson.mock.calls.some(([p]) => p.includes('/move-web-search?'))).toBe(false);
+});
+
+it('checks the selected window for web coverage before displaying an earlier official catalyst', async () => {
+  const start = '2026-11-25T17:00:00Z';
+  const end = '2026-11-25T19:00:00Z';
+  api.postJson.mockReturnValue(query({ ticker: 'TSLA', start, end }));
+  api.getJson.mockImplementation((path: string) => path.includes('/move-web-search?')
+    ? Promise.resolve({ data: { answer: 'Coverage cited a delivery update.', sources: [], available: true } })
+    : explanation(path).then(r => ({ data: { ...r.data, start, end, ticker: 'TSLA', foundInSources: true,
+      catalysts: [{ summary: 'Earlier filing', evidenceId: 'article:1' }],
+      catalystComparison: { since: '2026-11-25T16:00:00Z', priceMoves: [] },
+    } })));
+  render(<MoveChat />);
+  await ask('What moved TSLA?');
+  expect(await screen.findByText('Coverage cited a delivery update.')).toBeInTheDocument();
+  expect(api.getJson.mock.calls.some(([path]) => path.includes('/move-web-search?') && path.includes('inWindowOnly=true')))
+    .toBe(true);
+  expect(screen.queryByText('What we found')).not.toBeInTheDocument();
 });

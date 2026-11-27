@@ -7,7 +7,7 @@ import { ApiError } from '../api';
 import { ChatContext, Conversation, deleteConversation, loadConversations, newConversationId, saveConversation, Turn } from '../conversations';
 import { askMoveQuery, fetchExplanation, fetchWebSearch, frameWindow, MINUTE_MS, MoveWindow, TickerOption, TIME_FRAMES, TimeFrame, windowError } from '../moveInput';
 import { MONO, T } from '../theme';
-import { Explanation, MoveResult, MoveResultSummary, WebSearch, windowLabel } from './MoveResult';
+import { Explanation, hasEarlierCatalyst, MoveResult, MoveResultSummary, WebSearch, windowLabel } from './MoveResult';
 import { ConversationList } from './ConversationList';
 import { DateRange, DateRangeField } from './DateRangeField';
 import { Panel } from './ui';
@@ -110,7 +110,7 @@ export function MoveChat() {
       setTurns(withAnswer);
       setSaveTick(n => n + 1);
     };
-    fetchWebSearch(result.ticker, { start: result.start, end: result.end })
+    fetchWebSearch(result.ticker, { start: result.start, end: result.end }, hasEarlierCatalyst(result))
       .then(({ data }) => settle({ status: 'done', answer: data }))
       .catch(() => settle({ status: 'failed' }));
   }
@@ -119,13 +119,14 @@ export function MoveChat() {
     const { data } = await fetchExplanation(ticker, window, asOfEnd);
     setContext({ ticker, name, window });
     // Replays stay hindsight-free: no web search, which would read later coverage.
-    const web = data.foundInSources === false && !asOfEnd ? { status: 'loading' as const } : undefined;
+    const web = !asOfEnd && (data.foundInSources === false || hasEarlierCatalyst(data))
+      ? { status: 'loading' as const } : undefined;
     return {
       web,
       text: asOfEnd ? `Here’s what EventAlpha had collected by the end of that window.`
         : data.catalysts.length
           ? `Here are possible drivers for ${ticker}, ${windowLabel(window.start, window.end)}.`
-          : `Here’s what EventAlpha found for ${ticker}, ${windowLabel(window.start, window.end)}.`,
+          : `Here’s the move analysis for ${ticker}, ${windowLabel(window.start, window.end)}.`,
       result: data,
     };
   }
@@ -259,7 +260,7 @@ export function MoveChat() {
                         <Button size="small" onClick={() => toggle(turn.id)} sx={{ mt: 0.5, color: T.fgSecondary }}>Hide details</Button>
                       )}
                     </>
-                  ) : <MoveResultSummary result={turn.result} onExpand={() => toggle(turn.id)} />)}
+                  ) : <MoveResultSummary result={turn.result} web={turn.web} onExpand={() => toggle(turn.id)} />)}
                 </>
               )}
             </Box>

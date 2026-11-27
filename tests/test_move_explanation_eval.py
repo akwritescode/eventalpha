@@ -83,3 +83,53 @@ def test_abstention_still_passes_with_eligible_calendar_context():
     assert grades["decision_correct"]
     assert grades["required_context_present"]
     assert grades["late_evidence_ids"] == []
+
+
+def test_economic_comparison_must_match_a_known_release_and_fit_the_cutoff():
+    case = {**WINDOW, "expected": "abstain", "expectedLookbackEligible": True, "expectedEconomicComparisonAt": START}
+    result = {
+        **WINDOW,
+        "timeline": [source("release:1", "economic_release")],
+        "candidateEvidenceIds": [],
+        "catalysts": [],
+        "lookbackEligible": True,
+        "economicComparison": {
+            "since": START,
+            "priceMoves": [{"symbol": "SPY", "measuredStart": START, "measuredEnd": END, "dataAsOf": END}],
+        },
+    }
+    grades = grade(case, result)
+    assert grades["economic_anchor_matches_label"]
+    assert grades["context_anchors_valid"]
+    assert grades["comparison_bounds_valid"]
+    result["lookbackEligible"] = False
+    result["economicComparison"]["priceMoves"][0]["measuredEnd"] = "2026-11-25T14:01:00-05:00"
+    result["economicComparison"]["priceMoves"][0]["dataAsOf"] = "2026-11-25T14:01:00-05:00"
+    grades = grade(case, result)
+    assert not grades["lookback_policy_valid"]
+    assert not grades["context_anchors_valid"]
+    assert not grades["comparison_bounds_valid"]
+    assert grades["late_price_symbols"] == ["SPY"]
+
+
+def test_closed_window_rejects_earlier_coverage_and_requires_calendar_message():
+    case = {
+        **WINDOW,
+        "expected": "abstain",
+        "expectedLookbackEligible": False,
+        "expectedMarketClosure": "Thanksgiving",
+        "expectedBenchmarks": ["SPY", "XLY"],
+    }
+    result = {**WINDOW, "timeline": [], "candidateEvidenceIds": [], "catalysts": [], "lookbackEligible": False}
+    assert not grade(case, result)["market_closure_matches_label"]
+    result["priceUnavailableReason"] = "U.S. markets were closed (Thanksgiving)."
+    result["benchmarks"] = ["SPY", "SMH"]
+    assert not grade(case, result)["benchmarks_match_label"]
+    result["benchmarks"] = ["SPY", "XLY"]
+    earlier = {**source("article:1"), "publishedAt": "2026-11-25T10:59:00-05:00"}
+    result["timeline"] = [earlier]
+    result["candidateEvidenceIds"] = [earlier["id"]]
+    grades = grade(case, result)
+    assert grades["market_closure_matches_label"]
+    assert grades["benchmarks_match_label"]
+    assert not grades["lookback_policy_valid"]

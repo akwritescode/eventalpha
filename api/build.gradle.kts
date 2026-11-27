@@ -46,6 +46,7 @@ tasks.withType<Test> {
 val alembicSchema = layout.projectDirectory.file("src/test/resources/db/schema.sql")
 tasks.named<Test>("test") {
     inputs.file(alembicSchema)
+    inputs.file("../config/index_members.json")
 }
 
 tasks.processTestResources {

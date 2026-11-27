@@ -1,0 +1,52 @@
+[
+  {
+    "id": "small-move-empty-web",
+    "lookbackEligible": false,
+    "web": "empty",
+    "expectedSections": ["noCatalyst"],
+    "expectedPrices": ["TSLA +0.1%", "XLY +0.15%", "SPY +0.05%"]
+  },
+  {
+    "id": "small-move-in-window-web",
+    "lookbackEligible": false,
+    "web": "article",
+    "expectedSections": ["web", "publicationTime"],
+    "expectedPrices": ["TSLA +0.08%", "XLY +0.06%", "SPY +0.03%"]
+  },
+  {
+    "id": "material-reversal-web-precedes-calendar",
+    "lookbackEligible": true,
+    "web": "earlierArticle",
+    "expectedSections": ["web", "publicationTime"],
+    "expectedPrices": ["TSLA +0.08%", "XLY +0.06%", "SPY +0.03%"]
+  },
+  {
+    "id": "material-reversal-calendar-after-empty-web",
+    "lookbackEligible": true,
+    "web": "empty",
+    "expectedSections": ["calendar"],
+    "expectedPrices": ["TSLA -1.2%", "XLY -0.5%", "SPY -0.25%"]
+  },
+  {
+    "id": "pending-search-defers-calendar-and-abstention",
+    "lookbackEligible": true,
+    "web": "pending",
+    "expectedSections": ["web", "searching"],
+    "expectedPrices": ["TSLA +0.1%", "XLY +0.15%", "SPY +0.05%"]
+  },
+  {
+    "id": "holiday-with-cited-article-and-no-new-prices",
+    "lookbackEligible": false,
+    "holiday": true,
+    "web": "article",
+    "expectedSections": ["holiday", "web", "publicationTime"],
+    "expectedPrices": []
+  },
+  {
+    "id": "web-publication-time-unverified",
+    "lookbackEligible": true,
+    "web": "undatedArticle",
+    "expectedSections": ["web"],
+    "expectedPrices": ["TSLA +0.1%", "XLY +0.15%", "SPY +0.05%"]
+  }
+]

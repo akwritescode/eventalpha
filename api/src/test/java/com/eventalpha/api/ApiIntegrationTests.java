@@ -274,7 +274,8 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.data.timeline", hasSize(2)))
                 .andExpect(jsonPath("$.data.timeline[0].timing").value("before"))
                 .andExpect(jsonPath("$.data.timeline[1].status").value("verified_discovery"))
-                .andExpect(jsonPath("$.data.catalysts", hasSize(1)));
+                .andExpect(jsonPath("$.data.lookbackEligible").value(false))
+                .andExpect(jsonPath("$.data.catalysts", hasSize(0)));
 
         mvc.perform(get(path).param("start", start).param("end", end).param("asOf", end))
                 .andExpect(status().isOk())
@@ -406,6 +407,7 @@ class ApiIntegrationTests {
                         .param("end", "2025-06-10T12:30:00-04:00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.catalysts", hasSize(0)))
+                .andExpect(jsonPath("$.data.lookbackEligible").value(false))
                 .andExpect(jsonPath("$.data.summary").value("SPY rose 1.0% for the window. "
                         + "No verified catalyst found in EventAlpha's sources."));
     }
@@ -415,6 +417,15 @@ class ApiIntegrationTests {
      * the 08:30 GDP and PCE releases, bottomed at 11:15, and rallied from noon. A midday article that
      * only reports the chip rally is tagged SPY and scored material: it must not be quoted as a cause.
      */
+    /**
+     * seed.sql dates its calendar rows relative to today ("a CPI release two days ago"). Tests with
+     * fixed-date releases remove them first: in the UTC day of Nov 27, 2026 that CPI row landed at
+     * 08:30 ET on Nov 25 and joined the fixture's GDP and PCE releases. Rolled back with the test.
+     */
+    private void clearSeededCalendar() {
+        jdbc.sql("DELETE FROM econ_events WHERE source = 'bls' AND event_key IN ('cpi', 'cpi-past')").update();
+    }
+
     private void loadNov25() {
         jdbc.sql("""
                 INSERT INTO price_bars_minute (symbol, started_at, open, close, first_seen_at)
@@ -428,6 +439,7 @@ class ApiIntegrationTests {
                              ('XLU', '2026-11-25 11:59-05', 80.00), ('XLU', '2026-11-25 13:59-05', 79.68)
                      ) bar(symbol, started_at, close)
                 """).update();
+        clearSeededCalendar();
         jdbc.sql("""
                 INSERT INTO econ_events (source, event_key, title, event_date, scheduled_at, importance)
                 VALUES ('fred', '53|2026-11-25', 'Gross Domestic Product', '2026-11-25', '2026-11-25 08:30-05', 'high'),
@@ -535,6 +547,10 @@ class ApiIntegrationTests {
     @org.springframework.transaction.annotation.Transactional
     void aReplayOmitsCalendarRowsFetchedAfterItsCutoff() throws Exception {
         loadNov25();
+        jdbc.sql("""
+                UPDATE price_bars_minute SET first_seen_at = started_at + interval '1 minute'
+                WHERE started_at >= '2026-11-24 15:59-05' AND started_at <= '2026-11-25 13:59-05'
+                """).update();
         jdbc.sql("UPDATE econ_events SET fetched_at = '2026-11-25 08:00-05' WHERE event_key = '53|2026-11-25'").update();
         jdbc.sql("UPDATE econ_events SET fetched_at = '2026-11-25 14:01-05' WHERE event_key = '54|2026-11-25'").update();
         mvc.perform(get("/api/v1/tickers/SPY/move-explanation")
@@ -544,6 +560,80 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.data.timeline[?(@.id == 'release:fred:53|2026-11-25')].firstSeenAt")
                         .value("2026-11-25T13:00:00Z"))
                 .andExpect(jsonPath("$.data.timeline[?(@.id == 'release:fred:54|2026-11-25')]").isEmpty());
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void smallMoveKeepsSectorAndMarketButAnIntraminuteSpikeEnablesAnchoredCalendarFallback() throws Exception {
+        jdbc.sql("""
+                INSERT INTO price_bars_minute (symbol, started_at, open, close, high, first_seen_at)
+                SELECT symbol, bar::timestamptz, price, price, price, bar::timestamptz + interval '1 minute'
+                FROM (VALUES ('TSLA', '2025-06-12 09:59-04', 99.0), ('TSLA', '2025-06-12 10:29-04', 100.0),
+                             ('TSLA', '2025-06-12 10:59-04', 100.1), ('XLY', '2025-06-12 09:59-04', 100.0),
+                             ('XLY', '2025-06-12 10:29-04', 100.1), ('XLY', '2025-06-12 10:59-04', 100.2),
+                             ('SPY', '2025-06-12 09:59-04', 500.0), ('SPY', '2025-06-12 10:29-04', 500.5),
+                             ('SPY', '2025-06-12 10:59-04', 501.0)) v(symbol, bar, price)
+                """).update();
+        clearSeededCalendar();
+        jdbc.sql("""
+                INSERT INTO econ_events (source, event_key, title, event_date, scheduled_at, importance)
+                VALUES ('bls', 'test-tsla-cpi', 'Consumer Price Index', '2025-06-12', '2025-06-12 10:00-04', 'high')
+                """).update();
+        var request = get("/api/v1/tickers/TSLA/move-explanation")
+                .param("start", "2025-06-12T10:30:00-04:00").param("end", "2025-06-12T11:00:00-04:00");
+        mvc.perform(request).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.priceMoves[0].returnPercent").value(0.1))
+                .andExpect(jsonPath("$.data.lookbackEligible").value(false))
+                .andExpect(jsonPath("$.data.economicComparison").isEmpty())
+                .andExpect(jsonPath("$.data.benchmarks[*]").value(org.hamcrest.Matchers.contains("SPY", "XLY")));
+
+        jdbc.sql("UPDATE price_bars_minute SET high = 101.5 WHERE symbol = 'TSLA' AND started_at = '2025-06-12 10:59-04'")
+                .update();
+        mvc.perform(request).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.priceMoves[0].returnPercent").value(0.1))
+                .andExpect(jsonPath("$.data.lookbackEligible").value(true))
+                .andExpect(jsonPath("$.data.economicComparison.since").value("2025-06-12T14:00:00Z"))
+                .andExpect(jsonPath("$.data.economicComparison.priceMoves[0].measuredStart").value("2025-06-12T14:00:00Z"))
+                .andExpect(jsonPath("$.data.economicComparison.priceMoves[0].measuredEnd").value("2025-06-12T15:00:00Z"))
+                .andExpect(jsonPath("$.data.economicComparison.priceMoves[0].returnPercent").value(1.1111))
+                .andExpect(jsonPath("$.data.economicComparison.priceMoves[*].symbol")
+                        .value(org.hamcrest.Matchers.contains("TSLA", "SPY", "XLY")));
+
+        org.mockito.Mockito.when(web.available()).thenReturn(true);
+        org.mockito.Mockito.when(web.search(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(new com.eventalpha.api.moves.WebMoveSearch.WebAnswer("Coverage cited a company announcement.",
+                        List.of(new com.eventalpha.api.moves.WebMoveSearch.Source("Report", "https://example.com/report")),
+                        true, java.time.Instant.parse("2025-06-12T14:30:40Z"), null));
+        mvc.perform(get("/api/v1/tickers/TSLA/move-web-search")
+                        .param("start", "2025-06-12T10:30:00-04:00").param("end", "2025-06-12T11:00:00-04:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.publishedAt").value("2025-06-12T14:30:40Z"))
+                .andExpect(jsonPath("$.data.comparison.priceMoves[0].measuredStart").value("2025-06-12T14:30:00Z"))
+                .andExpect(jsonPath("$.data.comparison.priceMoves[0].measuredEnd").value("2025-06-12T15:00:00Z"))
+                .andExpect(jsonPath("$.data.comparison.priceMoves[0].returnPercent").value(0.1));
+        org.mockito.Mockito.verify(web).search(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.contains("moved more than 1%"));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    void previousCloseThroughThanksgivingExplainsMissingPricesOnlyIfNoOpenSessionOverlaps() throws Exception {
+        jdbc.sql("""
+                INSERT INTO market_sessions (day, is_open, open_time, close_time, description, source)
+                VALUES ('2025-11-26', true, '09:30', '16:00', 'regular', 'test'),
+                       ('2025-11-27', false, NULL, NULL, 'Thanksgiving', 'test')
+                """).update();
+        mvc.perform(get("/api/v1/tickers/TSLA/move-explanation")
+                        .param("start", "2025-11-26T16:00:00-05:00").param("end", "2025-11-27T11:00:00-05:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.priceMoves").isEmpty())
+                .andExpect(jsonPath("$.data.lookbackEligible").value(false))
+                .andExpect(jsonPath("$.data.priceUnavailableReason")
+                        .value("U.S. markets were closed (Thanksgiving). No new prices are available for this window."));
+        mvc.perform(get("/api/v1/tickers/TSLA/move-explanation")
+                        .param("start", "2025-11-26T15:30:00-05:00").param("end", "2025-11-27T11:00:00-05:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.priceUnavailableReason").isEmpty());
     }
 
     @Test
@@ -589,6 +679,7 @@ class ApiIntegrationTests {
                     '2026-11-13']::date[]) d
                 ON CONFLICT (day) DO UPDATE SET is_open = true
                 """).update();
+        clearSeededCalendar();
         jdbc.sql("""
                 INSERT INTO econ_events (source, event_key, title, event_date, scheduled_at, importance)
                 VALUES ('bls', 'cpi-test', 'Consumer Price Index', '2026-11-12', '2026-11-12 08:30-05', 'high'),
@@ -635,7 +726,7 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.data.sources[0].url").value("https://example.com/a"));
         org.mockito.Mockito.verify(web).search(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(
                 "SPY rose 2.1% between 12:00 PM and 2:00 PM ET (window starting Wednesday, Nov 25, 2026, ending "
-                        + "Wednesday, Nov 25, 2026)"));
+                        + "Wednesday, Nov 25, 2026). Publication range: 2026-11-25T17:00:00Z through 2026-11-25T19:00:00Z (inclusive)."));
         mvc.perform(get("/api/v1/tickers/SPY/move-web-search")
                         .param("start", java.time.OffsetDateTime.now().minusMinutes(30).toString())
                         .param("end", java.time.OffsetDateTime.now().plusMinutes(30).toString()))

@@ -31,6 +31,7 @@ def fetch(base_url: str, case: dict) -> dict:
 
 def grade(case: dict, result: dict) -> dict:
     cutoff = instant(case["asOf"])
+    start = instant(case["start"])
     end = instant(case["end"])
     evidence = {item["id"]: item for item in result["timeline"]}
     candidates = result["candidateEvidenceIds"]
@@ -61,13 +62,43 @@ def grade(case: dict, result: dict) -> dict:
         if evidence[evidence_id]["status"] in eligible_status and evidence[evidence_id].get("url")
     }
     abstains = case["expected"] == "abstain"
+    catalyst_comparison = result.get("catalystComparison")
+    economic_comparison = result.get("economicComparison")
+    comparisons = [comparison for comparison in (catalyst_comparison, economic_comparison) if comparison]
     late_prices = sorted(
         {
             price["symbol"]
-            for price in result.get("priceMoves", [])
+            for price in result.get("priceMoves", []) + [price for c in comparisons for price in c["priceMoves"]]
             if price.get("dataAsOf") and instant(price["dataAsOf"]) > cutoff
         }
     )
+    lookback_eligible = result.get("lookbackEligible")
+    context_anchors_valid = (
+        not catalyst_comparison
+        or bool(
+            cited
+            and cited[0] in evidence
+            and instant(catalyst_comparison["since"]) == instant(evidence[cited[0]]["publishedAt"])
+        )
+    ) and (
+        not economic_comparison
+        or (
+            not cited
+            and lookback_eligible is True
+            and any(
+                evidence_id in eligible_ids
+                and item["status"] == "economic_release"
+                and instant(item["publishedAt"]) == instant(economic_comparison["since"])
+                for evidence_id, item in evidence.items()
+            )
+        )
+    )
+    comparison_bounds_valid = all(
+        instant(price["measuredStart"]) <= instant(comparison["since"]) < instant(price["measuredEnd"]) <= end
+        for comparison in comparisons
+        for price in comparison["priceMoves"]
+    )
+    expected_economic_anchor = case.get("expectedEconomicComparisonAt")
     return {
         "window_matches": result["ticker"] == case["ticker"]
         and all(instant(result[field]) == instant(case[field]) for field in WINDOW_FIELDS),
@@ -82,6 +113,26 @@ def grade(case: dict, result: dict) -> dict:
         "citations_valid": set(cited) <= eligible_citations,
         "citations_match_labels": (not cited if abstains else bool(cited) and set(cited) <= labeled_citations),
         "required_context_present": required_context <= eligible_ids,
+        "lookback_policy_valid": lookback_eligible is not False
+        or (
+            economic_comparison is None
+            and all(
+                instant(evidence[item]["publishedAt"]) >= start for item in set(candidates + cited) & evidence.keys()
+            )
+        ),
+        "lookback_matches_label": "expectedLookbackEligible" not in case
+        or lookback_eligible is case["expectedLookbackEligible"],
+        "market_closure_matches_label": "expectedMarketClosure" not in case
+        or case["expectedMarketClosure"].casefold() in (result.get("priceUnavailableReason") or "").casefold(),
+        "benchmarks_match_label": "expectedBenchmarks" not in case
+        or set(result.get("benchmarks", [])) == set(case["expectedBenchmarks"]),
+        "context_anchors_valid": context_anchors_valid,
+        "comparison_bounds_valid": comparison_bounds_valid,
+        "economic_anchor_matches_label": expected_economic_anchor is None
+        or (
+            economic_comparison is not None
+            and instant(economic_comparison["since"]) == instant(expected_economic_anchor)
+        ),
         "late_evidence_ids": sorted(late_evidence),
         "late_price_symbols": late_prices,
     }

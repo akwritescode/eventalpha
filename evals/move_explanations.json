@@ -123,10 +123,25 @@
     "end": "2026-11-25T14:00:00-05:00",
     "asOf": "2026-11-25T17:42:29-05:00",
     "expected": "abstain",
+    "expectedLookbackEligible": true,
+    "expectedEconomicComparisonAt": "2026-11-25T08:30:00-05:00",
     "requiredContextIds": [
       "release:fred:53|2026-11-25",
       "release:fred:54|2026-11-25"
     ],
     "rationale": "Check both legs independently. GDP and PCE releases are morning context. If sourced reporting explicitly links the morning selloff to PCE, it is a possible contributor to the dip. Dip buying after heavy selling is an acceptable hypothesis for the rebound, with order-flow or sourced attribution needed for a stronger claim. The abstention label covers the window-level verified catalyst field on the current warehouse evidence."
+  },
+  {
+    "id": "tsla-thanksgiving-no-prices",
+    "question": "How did TSLA move since yesterday's close on Thanksgiving morning?",
+    "ticker": "TSLA",
+    "start": "2026-11-25T16:00:00-05:00",
+    "end": "2026-11-26T11:00:00-05:00",
+    "asOf": "2026-11-26T11:30:00-05:00",
+    "expected": "abstain",
+    "expectedLookbackEligible": false,
+    "expectedMarketClosure": "Thanksgiving",
+    "expectedBenchmarks": ["SPY", "XLY"],
+    "rationale": "The regular session was closed. The previous close can be a baseline, but there are no subsequent regular-session candles and no price excursion to justify older coverage or calendar context."
   }
 ]

@@ -42,16 +42,16 @@ it('shows returns, the demo note and a late lead in the retrospective timeline',
 it('marks a replay and explains missing prices and evidence', () => {
   render(<MoveResult result={{ ...base, asOf: base.end, priceMoves: [], timeline: [] }} />);
   expect(screen.getByText('As known at window end')).toBeInTheDocument();
-  expect(screen.getByText('No matching evidence in the timeline.')).toBeInTheDocument();
+  expect(screen.getByText('No verified catalyst found.')).toBeInTheDocument();
   expect(screen.getByText(/Intraday prices unavailable for this ticker and window/)).toBeInTheDocument();
 });
 
 it('hides the web section when the provider is disabled', () => {
   render(<MoveResult result={base} web={{ status: 'done', answer: { answer: null, sources: [], available: false } }} />);
-  expect(screen.queryByText(/From a web search/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/From the web/)).not.toBeInTheDocument();
 });
 
-it('combines an empty web result with the main conclusion and keeps calendar context collapsed', () => {
+it('falls back to release-anchored returns and keeps calendar context collapsed', () => {
   render(<MoveResult result={{
     ...base,
     ticker: 'TSLA',
@@ -60,6 +60,13 @@ it('combines an empty web result with the main conclusion and keeps calendar con
     asOf: '2026-11-26T14:36:00Z',
     summary: "TSLA fell 1% for the window. No verified catalyst found in EventAlpha's sources. Economic calendar: the 8:30 AM GDP release.",
     catalysts: [],
+    lookbackEligible: true,
+    benchmarks: ['SPY', 'XLY'],
+    economicComparison: {
+      since: '2026-11-25T13:30:00Z',
+      priceMoves: [{ symbol: 'TSLA', returnPercent: -2 }, { symbol: 'XLY', returnPercent: -0.5 },
+        { symbol: 'SPY', returnPercent: -0.25 }],
+    },
     priceMoves: [{ symbol: 'TSLA', returnPercent: -1 }],
     timeline: [{
       id: 'release:gdp', title: 'Gross Domestic Product (GDP)', url: 'https://example.com/gdp',
@@ -68,9 +75,11 @@ it('combines an empty web result with the main conclusion and keeps calendar con
     }],
   }} web={{ status: 'done', answer: { answer: null, sources: [], available: true } }} />);
 
-  expect(screen.getByText('TSLA fell 1% for the window. No specific catalyst was found in EventAlpha’s sources or in news coverage.'))
-    .toBeInTheDocument();
-  expect(screen.queryByText(/From a web search|No reported cause|Evidence timeline/)).not.toBeInTheDocument();
+  expect(screen.getByLabelText('TSLA -2%')).toBeInTheDocument();
+  expect(screen.getByLabelText('XLY -0.5%')).toBeInTheDocument();
+  expect(screen.getByLabelText('SPY -0.25%')).toBeInTheDocument();
+  expect(screen.queryByLabelText('TSLA -1%')).not.toBeInTheDocument();
+  expect(screen.queryByText(/From the web|No verified catalyst|Evidence timeline/)).not.toBeInTheDocument();
   const preview = screen.getByText('Economic calendar context');
   expect(preview).toHaveTextContent(/Before the move window · GDP, Nov 25,? (?:at )?8:30 AM EST/);
   expect(preview.closest('details')).not.toHaveAttribute('open');
@@ -112,7 +121,7 @@ it('renders web citations only for HTTP and HTTPS URLs', () => {
 });
 
 it('shows ranked sector ETFs with their names and returns', () => {
-  render(<MoveResult result={{ ...base, timeline: [], sectorMovers: {
+  render(<MoveResult result={{ ...base, ticker: 'SPY', timeline: [], sectorMovers: {
     gainers: [{ sector: 'Software', price: { symbol: 'IGV', returnPercent: 3 } }],
     decliners: [{ sector: 'Consumer staples', price: { symbol: 'XLP', returnPercent: -2 } }],
   } }} />);
@@ -123,8 +132,8 @@ it('shows ranked sector ETFs with their names and returns', () => {
   expect(screen.queryByLabelText('SMH -1%')).not.toBeInTheDocument();
 });
 
-it('labels releases, commentary and JEV-judged causes without X links', () => {
-  render(<MoveResult result={{ ...base, priceMoves: [], timeline: [
+it('labels commentary and JEV-judged causes without showing calendar context or X links', () => {
+  render(<MoveResult result={{ ...base, priceMoves: [], catalysts: [{ summary: 'Tariff delay', evidenceId: 'article:9002' }], timeline: [
     { id: 'release:fred:54|2026-11-25', title: 'Personal Income and Outlays (PCE)', url: 'https://fred.stlouisfed.org/release?rid=54',
       publishedAt: '2026-11-25T13:30:00Z', firstSeenAt: '2026-11-25T13:30:00Z', timing: 'before', status: 'economic_release',
       originalId: null, verifiedAt: null },
@@ -135,10 +144,58 @@ it('labels releases, commentary and JEV-judged causes without X links', () => {
       publishedAt: '2026-11-25T17:40:00Z', firstSeenAt: '2026-11-25T17:40:00Z', timing: 'during', status: 'explains_move',
       originalId: null, verifiedAt: null, causeScore: 0.98 },
   ] }} />);
-  fireEvent.click(screen.getByText('Economic calendar context'));
-  expect(screen.getByText('Economic release')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Personal Income and Outlays (PCE)' })).toHaveAttribute('href', 'https://fred.stlouisfed.org/release?rid=54');
+  expect(screen.queryByText('Economic calendar context')).not.toBeInTheDocument();
   expect(screen.getByText('Market commentary')).toBeInTheDocument();
   expect(screen.getByText('Explains the move · JEV 0.98')).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'View X post' })).not.toBeInTheDocument();
+});
+
+it('replaces window returns with one set of returns anchored to the web article', () => {
+  const publishedAt = '2025-04-15T21:24:30Z';
+  render(<MoveResult result={{
+    ...base,
+    ticker: 'TSLA',
+    benchmarks: ['SPY', 'XLY'],
+    lookbackEligible: true,
+    economicComparison: { since: '2025-04-15T13:00:00Z', priceMoves: [{ symbol: 'TSLA', returnPercent: 3 }] },
+    priceMoves: [{ symbol: 'TSLA', returnPercent: 2 }],
+  }} web={{ status: 'done', answer: {
+    available: true, answer: 'Reporting attributed the move to a delivery update.', publishedAt,
+    sources: [{ title: 'Tesla deliveries', url: 'https://example.com/deliveries' }],
+    comparison: { since: publishedAt, priceMoves: [
+      { symbol: 'TSLA', returnPercent: 1.5 }, { symbol: 'XLY', returnPercent: 0.5 }, { symbol: 'SPY', returnPercent: 0.1 },
+    ] },
+  } }} />);
+  expect(screen.getByText('From the web')).toBeInTheDocument();
+  expect(screen.getByText(/Published Apr 15, 5:24:30 PM EDT/)).toBeInTheDocument();
+  expect(screen.getByLabelText('TSLA +1.5%')).toBeInTheDocument();
+  expect(screen.getByLabelText('XLY +0.5%')).toBeInTheDocument();
+  expect(screen.getByLabelText('SPY +0.1%')).toBeInTheDocument();
+  expect(screen.queryByLabelText('TSLA +2%')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Economic calendar context|No verified catalyst|What we found/)).not.toBeInTheDocument();
+});
+
+it('uses a calendar-backed holiday message and waits for the search to conclude', () => {
+  const result = { ...base, timeline: [], priceMoves: [], lookbackEligible: false,
+    priceUnavailableReason: 'U.S. markets were closed (Thanksgiving). No new prices are available for this window.' };
+  const { rerender } = render(<MoveResult result={result} web={{ status: 'loading' }} />);
+  expect(screen.getByText(/markets were closed \(Thanksgiving\)/)).toBeInTheDocument();
+  expect(screen.queryByText(/every 15 minutes|No verified catalyst|What we found/)).not.toBeInTheDocument();
+  rerender(<MoveResult result={result} web={{ status: 'done', answer: { answer: null, available: true, sources: [] } }} />);
+  expect(screen.getAllByText('No verified catalyst found.')).toHaveLength(1);
+  expect(screen.queryByText('From the web')).not.toBeInTheDocument();
+});
+
+it('keeps the selected-window benchmarks on a small move and hides calendar entries', () => {
+  render(<MoveResult result={{
+    ...base, ticker: 'TSLA', benchmarks: ['SPY', 'XLY'], lookbackEligible: false,
+    priceMoves: [{ symbol: 'TSLA', returnPercent: 0.1 }, { symbol: 'XLY', returnPercent: 0.15 },
+      { symbol: 'SPY', returnPercent: 0.05 }],
+    timeline: [{ ...base.timeline[0], id: 'release:gdp', title: 'GDP', status: 'economic_release', timing: 'during' }],
+  }} />);
+  expect(screen.getByLabelText('TSLA +0.1%')).toBeInTheDocument();
+  expect(screen.getByLabelText('XLY +0.15%')).toBeInTheDocument();
+  expect(screen.getByLabelText('SPY +0.05%')).toBeInTheDocument();
+  expect(screen.getByText('No verified catalyst found.')).toBeInTheDocument();
+  expect(screen.queryByText('Economic calendar context')).not.toBeInTheDocument();
 });

@@ -21,6 +21,7 @@ type Evidence = {
 };
 
 type PriceMove = { symbol: string; returnPercent: number; measuredStart?: string; measuredEnd?: string; dataAsOf?: string };
+type ReturnComparison = { since: string; priceMoves: PriceMove[] };
 type SectorMove = { sector: string; price: PriceMove };
 
 export type Explanation = {
@@ -35,6 +36,11 @@ export type Explanation = {
   priceMoves: PriceMove[];
   sectorMovers?: { gainers: SectorMove[]; decliners: SectorMove[] };
   foundInSources?: boolean; // false: EventAlpha's sources hold nothing, so the chat asks a web search
+  priceUnavailableReason?: string | null;
+  lookbackEligible?: boolean;
+  windowSummary?: string;
+  catalystComparison?: ReturnComparison | null;
+  economicComparison?: ReturnComparison | null;
 };
 
 const eastern = (options: Intl.DateTimeFormatOptions) =>
@@ -68,26 +74,34 @@ const timing: Record<Evidence['timing'], { label: string; color: string }> = {
   after: { label: 'After · later context', color: T.fgMuted },
 };
 
-function Returns({ result }: { result: Explanation }) {
-  if (!result.priceMoves.length) {
-    return (
-      <Typography variant="body2" color="text.secondary">
-        Intraday prices unavailable for this ticker and window.
-        Price collection runs every 15 minutes, so recent windows may still be pending.
-      </Typography>
-    );
+function Returns({ result, context }: { result: Explanation; context: MoveContext }) {
+  const { comparison, kind } = context;
+  const priceMoves = displayedPrices(result, context);
+  const missing = !priceMoves.some(p => p.symbol === result.ticker);
+  const message = missing ? result.priceUnavailableReason
+    ?? (comparison
+      ? 'Price change after this event is unavailable.'
+      : 'Intraday prices unavailable for this ticker and window.') : null;
+  if (!priceMoves.length) {
+    return message ? <Typography variant="body2" color="text.secondary">{message}</Typography> : null;
   }
-  const benchmarks = result.benchmarks || result.priceMoves.map(p => p.symbol);
+  const benchmarks = result.benchmarks || priceMoves.map(p => p.symbol);
   const symbols = Array.from(new Set([result.ticker, ...benchmarks.filter(symbol => !result.sectorMovers || symbol !== 'SMH')]));
-  const sectorGroups = result.sectorMovers && [
+  const sectorGroups = !comparison && result.sectorMovers && [
     { label: 'Top gainers', moves: result.sectorMovers.gainers },
     { label: 'Top decliners', moves: result.sectorMovers.decliners },
   ].filter(group => group.moves.length > 0);
   return (
     <>
+      {message && <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{message}</Typography>}
+      {comparison && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+          Price change since {kind === 'calendar' ? 'the release' : 'publication'} · {stamp(comparison.since)}
+        </Typography>
+      )}
       <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
         {symbols.map((symbol) => {
-          const move = result.priceMoves.find(p => p.symbol === symbol);
+          const move = priceMoves.find(p => p.symbol === symbol);
           const value = move?.returnPercent;
           const color = value === undefined || value === 0 ? T.fgSecondary : value > 0 ? T.up : T.down;
           return (
@@ -95,7 +109,7 @@ function Returns({ result }: { result: Explanation }) {
               title={move?.measuredEnd ? `${stamp(move.measuredStart!)} to ${stamp(move.measuredEnd)}. Observed ${stamp(move.dataAsOf!)}.` : undefined}
               sx={{ p: 1.25, borderRadius: 2, bgcolor: alpha(color, symbol === result.ticker ? 0.12 : 0.06), border: `1px solid ${alpha(color, 0.2)}` }}>
               <Typography variant="caption" sx={{ color: T.fgSecondary, fontFamily: MONO }}>
-                {symbol}{symbol === result.ticker ? '' : symbol === 'SPY' ? ' · market' : symbol === 'SMH' ? ' · chips' : ''}
+                {symbol}{symbol === result.ticker ? '' : symbol === 'SPY' ? ' · market' : symbol === 'SMH' ? ' · chips' : ' · sector'}
               </Typography>
               <Stack direction="row" alignItems="center" sx={{ color, fontFamily: MONO, fontWeight: 600, fontSize: '1.1rem' }}>
                 {value !== undefined && value > 0 && <ArrowDropUpRounded sx={{ ml: -0.75 }} />}
@@ -107,7 +121,7 @@ function Returns({ result }: { result: Explanation }) {
         })}
       </Box>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
-        Returns use the latest completed candles at the window edges. Hover a card for exact times.
+        Hover a return for its price timestamps.
       </Typography>
       {sectorGroups && sectorGroups.length > 0 && (
         <Box sx={{ mt: 2 }}>
@@ -175,9 +189,9 @@ function Timeline({ items, anchor }: { items: Evidence[]; anchor: string }) {
   );
 }
 
-function EconomicCalendar({ releases, anchor }: { releases: Evidence[]; anchor: string }) {
-  // The API returns releases in chronological order.
-  const nearby = releases.find(item => item.timing === 'during') ?? releases[releases.length - 1];
+function EconomicCalendar({ releases, anchor, since }: { releases: Evidence[]; anchor: string; since?: string }) {
+  const nearby = releases.find(item => item.publishedAt === since)
+    ?? releases.find(item => item.timing === 'during') ?? releases[releases.length - 1];
   const names = Array.from(new Set(releases.filter(item => item.publishedAt === nearby.publishedAt)
     .map(item => item.title.match(/\(([^()]+)\)$/)?.[1] ?? item.title)));
   const name = names.length > 3 ? `${names.length} releases` : new Intl.ListFormat('en-US').format(names);
@@ -196,8 +210,10 @@ function EconomicCalendar({ releases, anchor }: { releases: Evidence[]; anchor: 
 }
 
 /** One-line stand-in for an older result in the chat: ticker, window, its return; click to expand. */
-export function MoveResultSummary({ result, onExpand }: { result: Explanation; onExpand: () => void }) {
-  const move = result.priceMoves.find(p => p.symbol === result.ticker);
+export function MoveResultSummary({ result, web, onExpand }: { result: Explanation; web?: WebSearch; onExpand: () => void }) {
+  const context = moveContext(result, web);
+  const { comparison } = context;
+  const move = displayedPrices(result, context).find(p => p.symbol === result.ticker);
   const color = !move || move.returnPercent === 0 ? T.fgSecondary : move.returnPercent > 0 ? T.up : T.down;
   return (
     <Box component="button" type="button" onClick={onExpand} aria-label={`Show details for ${result.ticker}, ${windowLabel(result.start, result.end)}`}
@@ -206,14 +222,48 @@ export function MoveResultSummary({ result, onExpand }: { result: Explanation; o
         cursor: 'pointer', '&:hover': { borderColor: T.borderStrong } }}>
       <Box component="span" sx={{ fontFamily: MONO, fontWeight: 700 }}>{result.ticker}</Box>
       <Typography component="span" variant="body2" color="text.secondary">{windowLabel(result.start, result.end)}</Typography>
-      {move && <Box component="span" sx={{ fontFamily: MONO, fontWeight: 600, color }}>{percent.format(move.returnPercent / 100)}</Box>}
+      {move && <Box component="span" title={comparison ? `Since ${stamp(comparison.since)}` : undefined}
+        sx={{ fontFamily: MONO, fontWeight: 600, color }}>{percent.format(move.returnPercent / 100)}</Box>}
       <Typography component="span" variant="body2" sx={{ ml: 'auto', color: T.amber }}>Show details</Typography>
     </Box>
   );
 }
 
-export type WebAnswer = { answer: string | null; sources: { title: string; url: string }[]; available: boolean };
+export type WebAnswer = {
+  answer: string | null;
+  sources: { title: string; url: string }[];
+  available: boolean;
+  publishedAt?: string | null;
+  comparison?: ReturnComparison | null;
+};
 export type WebSearch = { status: 'loading' } | { status: 'failed' } | { status: 'done'; answer: WebAnswer };
+
+export function hasEarlierCatalyst(result: Explanation) {
+  const at = result.catalystComparison?.since;
+  return Boolean(at && Date.parse(at) < Date.parse(result.start));
+}
+
+type MoveContext = { kind: 'official' | 'web' | 'calendar' | 'window'; comparison?: ReturnComparison | null };
+
+function displayedPrices(result: Explanation, context: MoveContext) {
+  return context.comparison?.priceMoves ?? result.priceMoves;
+}
+
+function moveContext(result: Explanation, web?: WebSearch): MoveContext {
+  if (result.catalysts.length && !hasEarlierCatalyst(result)) {
+    return { kind: 'official', comparison: result.catalystComparison };
+  }
+  if (web?.status === 'done' && web.answer.available && web.answer.answer) {
+    return { kind: 'web', comparison: web.answer.comparison };
+  }
+  if (web?.status === 'loading') return { kind: 'window' };
+  if (result.catalysts.length) return { kind: 'official', comparison: result.catalystComparison };
+  if (result.economicComparison || (result.lookbackEligible === undefined
+    && result.timeline.some(item => item.status === 'economic_release'))) {
+    return { kind: 'calendar', comparison: result.economicComparison };
+  }
+  return { kind: 'window' };
+}
 
 function isWebUrl(value: string) {
   try {
@@ -229,7 +279,7 @@ function WebSection({ web }: { web: WebSearch }) {
   if (web.status === 'done' && (!web.answer.available || !web.answer.answer)) return null;
   return (
     <Box sx={{ mt: 2, p: 1.5, borderRadius: 2, border: `1px dashed ${T.borderStrong}` }} aria-live="polite">
-      <Typography variant="overline" color="text.secondary">From a web search · outside EventAlpha's sources</Typography>
+      <Typography variant="overline" color="text.secondary">From the web</Typography>
       {web.status === 'loading' ? (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ color: T.fgSecondary }}>
           <CircularProgress size={12} color="inherit" /><Typography variant="body2">Searching news coverage…</Typography>
@@ -239,6 +289,9 @@ function WebSection({ web }: { web: WebSearch }) {
       ) : (
         <>
           <Typography variant="body2">{web.answer.answer}</Typography>
+          {web.answer.publishedAt && (
+            <Typography variant="caption" color="text.secondary">Published {stamp(web.answer.publishedAt)}</Typography>
+          )}
           <Stack direction="row" gap={1.5} flexWrap="wrap" sx={{ mt: 0.75 }}>
             {web.answer.sources.filter(s => isWebUrl(s.url)).map(s => (
               <Link key={s.url} href={s.url} target="_blank" rel="noopener noreferrer" variant="caption">{s.title}</Link>
@@ -255,17 +308,19 @@ export function MoveResult({ result, web }: { result: Explanation; web?: WebSear
   const isDemo = result.ticker === demo.ticker && Date.parse(result.start) === Date.parse(demo.start)
     && Date.parse(result.end) === Date.parse(demo.end);
   const replayed = Date.parse(result.asOf) <= Date.parse(result.end);
-  const evidence = result.timeline.filter(item => item.status !== 'economic_release');
-  const releases = result.timeline.filter(item => item.status === 'economic_release');
-  // The API also includes calendar context in its prose summary. The calendar control displays it here.
-  const summary = releases.length > 0
-    ? result.summary.replace(/(^| )Economic calendar: [^.]+\.(?= |$)/, '').trim()
-    : result.summary;
-  const searchedWithoutCause = web?.status === 'done' && web.answer.available && !web.answer.answer;
-  const conclusion = searchedWithoutCause
-    ? summary.replace(/No verified catalyst found (?:for this move|in EventAlpha's sources)\./,
-      'No specific catalyst was found in EventAlpha’s sources or in news coverage.')
-    : summary;
+  const context = moveContext(result, web);
+  const evidence = result.timeline.filter(item => item.status !== 'economic_release'
+    && (item.timing !== 'before' || result.lookbackEligible !== false)
+    && (context.kind === 'official' || item.status !== 'explains_move'));
+  const releases = context.kind === 'calendar' ? result.timeline.filter(item => item.status === 'economic_release') : [];
+  // Saved and current API responses can include conclusions and calendar prose in the summary.
+  const priceSummary = context.kind !== 'official' && !context.comparison
+    ? result.windowSummary ?? (result.catalysts.length ? '' : result.summary
+      .replace(/(^| )No verified catalyst found (?:for this move|in EventAlpha's sources)\.(?= |$)/, '')
+      .replace(/(^| )Economic calendar: [^.]+\.(?= |$)/, '')
+      .trim())
+    : '';
+  const noCatalyst = context.kind === 'window' && web?.status !== 'failed' && web?.status !== 'loading';
   const source = (id: string) => <Link href={`#move-${anchor}-${id}`} underline="hover">source</Link>;
 
   return (
@@ -279,32 +334,39 @@ export function MoveResult({ result, web }: { result: Explanation; web?: WebSear
         {replayed && <Pill tone={{ fg: T.amber, bg: alpha(T.amber, 0.14) }}>As known at window end</Pill>}
       </Stack>
 
-      <Returns result={result} />
+      <Returns result={result} context={context} />
 
-      <Box sx={{ mt: 2, pl: 1.5, py: 0.5, borderLeft: `3px solid ${T.amber}` }}>
-        <Typography variant="overline" color="text.secondary">What we found</Typography>
-        <Typography aria-live="polite">
-          {conclusion}
-          {result.catalysts.length === 1 && <> ({source(result.catalysts[0].evidenceId)})</>}
-        </Typography>
-        {result.catalysts.length > 1 && (
-          <Box component="ul" sx={{ pl: 2.5, my: 0.5 }}>
-            {result.catalysts.map(c => <li key={c.evidenceId}>{c.summary} ({source(c.evidenceId)})</li>)}
-          </Box>
-        )}
-        <Typography variant="caption" color="text.secondary">Evidence available as of {stamp(result.asOf)}.</Typography>
-      </Box>
+      {context.kind === 'official' && (
+        <Box sx={{ mt: 2, pl: 1.5, py: 0.5, borderLeft: `3px solid ${T.amber}` }}>
+          <Typography variant="overline" color="text.secondary">What we found</Typography>
+          <Typography>
+            {result.summary}
+            {result.catalysts.length === 1 && <> ({source(result.catalysts[0].evidenceId)})</>}
+          </Typography>
+          {result.catalysts.length > 1 && (
+            <Box component="ul" sx={{ pl: 2.5, my: 0.5 }}>
+              {result.catalysts.map(c => <li key={c.evidenceId}>{c.summary} ({source(c.evidenceId)})</li>)}
+            </Box>
+          )}
+        </Box>
+      )}
 
-      {web && <WebSection web={web} />}
+      {priceSummary && <Typography variant="body2" sx={{ mt: 1 }}>{priceSummary}</Typography>}
+      {web && (context.kind !== 'official' || web.status === 'failed') && <WebSection web={web} />}
 
-      {(evidence.length > 0 || releases.length === 0) && (
+      {evidence.length > 0 && (
         <>
           <Typography variant="overline" component="h3" color="text.secondary" sx={{ display: 'block', mt: 2 }}>Evidence timeline</Typography>
-          {evidence.length > 0 ? <Timeline items={evidence} anchor={anchor} />
-            : <Typography color="text.secondary">No matching evidence in the timeline.</Typography>}
+          <Timeline items={evidence} anchor={anchor} />
         </>
       )}
-      {releases.length > 0 && <EconomicCalendar releases={releases} anchor={anchor} />}
+      {releases.length > 0 && <EconomicCalendar releases={releases} anchor={anchor} since={context.comparison?.since} />}
+      {noCatalyst && <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }} aria-live="polite">
+        No verified catalyst found.
+      </Typography>}
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+        Evidence available as of {stamp(result.asOf)}.
+      </Typography>
     </Box>
   );
 }

@@ -5,6 +5,7 @@ import com.eventalpha.api.common.RateLimiter;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Pattern;
+import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Duration;
@@ -50,6 +51,7 @@ class MoveController {
             @PathVariable @Pattern(regexp = "[A-Za-z.\\-]{1,10}") String ticker,
             @RequestParam OffsetDateTime start,
             @RequestParam OffsetDateTime end,
+            @RequestParam(defaultValue = "false") boolean inWindowOnly,
             HttpServletRequest http) {
         Instant windowStart = start.toInstant();
         Instant windowEnd = end.toInstant();
@@ -62,24 +64,75 @@ class MoveController {
             return ResponseEntity.ok(ApiResponse.of(WebMoveSearch.WebAnswer.none(false), now));
         }
         String symbol = ticker.toUpperCase(Locale.ROOT);
-        String moved = repo.windowMove(symbol, windowStart, windowEnd, now)
+        var windowMove = repo.windowMove(symbol, windowStart, windowEnd, now);
+        boolean material = repo.canLookBack(symbol, windowStart, windowEnd, now, windowMove);
+        String moved = windowMove
                 .map(m -> m.returnPercent().signum() == 0 ? "was flat"
                         : (m.returnPercent().signum() > 0 ? "rose " : "fell ") + m.returnPercent().abs()
                                 .setScale(1, RoundingMode.HALF_UP).toPlainString() + "%")
-                .orElse("moved");
+                .orElse("has no measured price change available");
         String move = symbol + " " + moved + " between " + WHEN.format(windowStart) + " and " + WHEN.format(windowEnd)
                 + " ET (window starting " + DAY.format(windowStart) + ", ending " + DAY.format(windowEnd) + ")";
-        var key = symbol + ":" + windowStart.getEpochSecond() + ":" + windowEnd.getEpochSecond();
-        var cached = web.cachedAnswer(key, move);
-        if (cached.isPresent()) return ResponseEntity.ok(ApiResponse.of(cached.get(), now));
-        long retryAfter = webLimiter.acquire(http.getRemoteAddr());
-        if (retryAfter > 0) {
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).header("Retry-After", Long.toString(retryAfter))
-                    .body(ApiResponse.of(WebMoveSearch.WebAnswer.none(true), now));
+        if (material && windowMove.filter(m -> m.returnPercent().abs().compareTo(BigDecimal.ONE) <= 0).isPresent()) {
+            move += ". The price moved more than 1% from its starting price during the window"
+                    + "; look for coverage of that intrawindow move";
         }
-        var answer = web.search(key, move);
-        return ResponseEntity.status(answer.available() ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE)
-                .body(ApiResponse.of(answer, now));
+        String key = symbol + ":" + windowStart.getEpochSecond() + ":" + windowEnd.getEpochSecond();
+        var inWindow = new PublicationRange(windowStart, windowEnd, false);
+        var first = searchScope(key, move, inWindow, http, false);
+        if (first.status() != HttpStatus.OK) return first.response(now);
+        var answer = first.answer();
+        if (!inWindowOnly && material && answer.answer() == null) {
+            var earlier = new PublicationRange(repo.lookbackFloor(windowStart), windowStart, true);
+            // The same request can make one follow-up lookup after it has cleared the limit.
+            var fallback = searchScope(key, move, earlier, http, first.performed());
+            if (fallback.status() != HttpStatus.OK) return fallback.response(now);
+            answer = fallback.answer();
+        }
+        if (answer.publishedAt() != null) {
+            answer = answer.withComparison(repo.returnsSince(symbol, answer.publishedAt(), windowEnd, now));
+        }
+        return ResponseEntity.ok(ApiResponse.of(answer, now));
+    }
+
+    private record PublicationRange(Instant start, Instant end, boolean beforeWindow) {
+        String describe() {
+            return " Publication range: " + start + " through " + end
+                    + (beforeWindow ? " (end exclusive). Confirm an exact publication timestamp." : " (inclusive).");
+        }
+
+        boolean accepts(WebMoveSearch.WebAnswer answer) {
+            if (answer.answer() == null) return true;
+            var at = answer.publishedAt();
+            if (at == null) return !beforeWindow;
+            return !at.isBefore(start) && (beforeWindow ? at.isBefore(end) : !at.isAfter(end));
+        }
+    }
+
+    private record SearchAttempt(WebMoveSearch.WebAnswer answer, HttpStatus status, boolean performed, long retryAfter) {
+        ResponseEntity<ApiResponse<WebMoveSearch.WebAnswer>> response(Instant now) {
+            var response = ResponseEntity.status(status);
+            if (retryAfter > 0) response.header("Retry-After", Long.toString(retryAfter));
+            return response.body(ApiResponse.of(answer, now));
+        }
+    }
+
+    private SearchAttempt searchScope(String key, String move,
+            PublicationRange range, HttpServletRequest request, boolean alreadyLimited) {
+        String prompt = move + "." + range.describe();
+        var cached = web.cachedAnswer(key, prompt);
+        if (cached.isPresent()) return new SearchAttempt(accepted(cached.get(), range), HttpStatus.OK, false, 0);
+        long retryAfter = alreadyLimited ? 0 : webLimiter.acquire(request.getRemoteAddr());
+        if (retryAfter > 0) {
+            return new SearchAttempt(WebMoveSearch.WebAnswer.none(true), HttpStatus.TOO_MANY_REQUESTS, false, retryAfter);
+        }
+        var answer = web.search(key, prompt);
+        return new SearchAttempt(accepted(answer, range),
+                answer.available() ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE, true, 0);
+    }
+
+    private static WebMoveSearch.WebAnswer accepted(WebMoveSearch.WebAnswer answer, PublicationRange range) {
+        return range.accepts(answer) ? answer : WebMoveSearch.WebAnswer.none(true);
     }
 
     private static void checkWindow(Instant windowStart, Instant windowEnd) {

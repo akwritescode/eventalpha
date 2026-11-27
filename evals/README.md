@@ -1,7 +1,7 @@
 # Move explanation evals
 
-The starter set in `move_explanations.json` includes a real NVDA catalyst and four Nov 25 SPY
-windows. The positive case expects the [April 15 NVIDIA 8-K](https://www.sec.gov/Archives/edgar/data/1045810/000104581025000082/nvda-20250409.htm)
+The set in `move_explanations.json` includes a real NVDA catalyst, four Nov 25 SPY windows, and a
+TSLA previous-close window on Thanksgiving. The positive case expects the [April 15 NVIDIA 8-K](https://www.sec.gov/Archives/edgar/data/1045810/000104581025000082/nvda-20250409.htm)
 that disclosed H20 export restrictions and expected charges. The label uses the SEC document
 URL so it works across warehouses with different database IDs. For a reproducible local replay,
 `examples/move-window.sql` supplies the real filing with simulated observation times and X posts.
@@ -31,11 +31,33 @@ python3 scripts/eval_move_explanations.py --responses /tmp/move-baseline.json
 ```
 
 The report scores the three-article shortlist, catalyst decisions, citation targets, required context,
-and evidence observed after the cutoff. Candidate recall is computed for labeled IDs or URLs.
+exchange-calendar closures, lookback eligibility, and evidence observed after the cutoff. It checks
+that return comparisons use the cited event as their anchor, start on or before that anchor, and
+end within the selected window. The TSLA case also checks the XLY and SPY benchmark selection.
+Candidate recall is computed for labeled IDs or URLs.
 A missing required release is a coverage failure. Compare saved runs using the
 same corpus, warehouse snapshot, and cutoff. The model-generated prose and the live web search
 require manual review. The API grader checks whether citations are eligible and labeled,
 while the reviewer checks whether they support the stated reason.
+
+API integration fixtures cover an exact 1% boundary, a 0.1% net move with a larger intraminute
+spike, a holiday next to an open session, and an article with a publication time between two
+candle closes. The chat tests cover the precedence of web coverage over calendar context and the
+replacement of the selected-window returns with the article or release comparison.
+
+## Presentation scoring
+
+`move_presentation.json` pairs synthetic API scenarios with the expected visible sections and exact
+ticker, sector, and market returns. It covers small moves with and without in-window reporting,
+web coverage taking precedence over calendar context, calendar fallback after an empty search,
+pending searches, holidays, and cited articles with an unverified publication time. The eval
+renders the production component and checks for extra return cards and conclusions. It runs as
+part of the frontend test suite and requires no API keys.
+
+```sh
+cd web
+CI=true npm test -- --watchAll=false --watchman=false --runInBand MovePresentation.eval
+```
 
 ## Article-level cases
 
@@ -72,3 +94,17 @@ instructions from commit `54019d0`. Both arms use the same configured model IDs.
 under `api/build/test-results/test/` records reasons for each run, false positives, hidden causes,
 reason mismatches, JEV precision and recall, verdicts that flip, and scores near the threshold.
 The direction-only arm determines the test result. The default suite uses no live model calls.
+
+## Live web-search probe
+
+Export `ANTHROPIC_API_KEY` and run from `api/`.
+
+```sh
+EVENTALPHA_RUN_LIVE_WEB_EVAL=1 ./gradlew test --rerun-tasks --tests '*LiveMoveWebEvalTest'
+```
+
+The probe sends three historical windows through the production web-search controller with
+fixture warehouse inputs. It reports uncached provider calls, cited answers, publication times
+supported by citations, and answers that survive publication-range checks. The results are
+diagnostic because search results vary. Undated in-window answers keep the selected-window
+returns and summary.

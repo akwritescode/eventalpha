@@ -5,15 +5,35 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.anthropic.models.messages.CitationsWebSearchResultLocation;
 import com.anthropic.models.messages.TextBlock;
 import com.anthropic.models.messages.TextCitation;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class WebMoveSearchTest {
 
     private static TextBlock cited(String text, String url, String title) {
-        var location = CitationsWebSearchResultLocation.builder().citedText("…").encryptedIndex("x")
+        return cited(text, url, title, "…");
+    }
+
+    private static TextBlock cited(String text, String url, String title, String excerpt) {
+        var location = CitationsWebSearchResultLocation.builder().citedText(excerpt).encryptedIndex("x")
                 .title(title).url(url).build();
         return TextBlock.builder().text(text).citations(List.of(TextCitation.ofWebSearchResultLocation(location))).build();
+    }
+
+    @Test
+    void attachesPublicationTimeOnlyWhenTheSourceSupportsIt() {
+        String answer = "PUBLISHED: 2026-11-26T11:00:00-05:00\nReports attributed the rally to a delivery update.";
+        String url = "https://example.com/tesla";
+        assertThat(WebMoveSearch.parse(List.of(cited(answer, url, "Deliveries", "Published Nov 26, 2026 at 11:00 AM EST")))
+                .publishedAt()).isEqualTo(Instant.parse("2026-11-26T16:00:00Z"));
+        assertThat(WebMoveSearch.parse(List.of(cited(answer, url, "Deliveries", "Published Nov. 26 at 11 a.m. ET")))
+                .publishedAt()).isEqualTo(Instant.parse("2026-11-26T16:00:00Z"));
+        assertThat(WebMoveSearch.parse(List.of(cited(answer, url, "Deliveries", "Published Nov 26, 2026 at 1:00 AM EST")))
+                .publishedAt()).isNull();
+        var noTime = WebMoveSearch.parse(List.of(cited(answer, url, "Deliveries")));
+        assertThat(noTime.publishedAt()).isNull();
+        assertThat(noTime.answer()).isEqualTo("Reports attributed the rally to a delivery update.");
     }
 
     private static TextBlock plain(String text) {
