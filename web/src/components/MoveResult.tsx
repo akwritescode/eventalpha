@@ -150,9 +150,11 @@ function Returns({ result, context }: { result: Explanation; context: MoveContex
 }
 
 function Timeline({ items, anchor }: { items: Evidence[]; anchor: string }) {
+  const newestFirst = [...items].sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
+  const visibleIds = new Set(items.map(item => item.id));
   return (
     <Box component="ol" sx={{ listStyle: 'none', pl: 0, my: 0 }}>
-      {items.map((item, index) => (
+      {newestFirst.map((item, index) => (
         <Box component="li" id={`move-${anchor}-${item.id}`} key={item.id}
           sx={{ position: 'relative', pl: 3, pb: index === items.length - 1 ? 0 : 2, scrollMarginTop: 80 }}>
           {index < items.length - 1 && (
@@ -173,7 +175,9 @@ function Timeline({ items, anchor }: { items: Evidence[]; anchor: string }) {
             {isXPost(item) && (
               <> · <Link href={item.url} target="_blank" rel="noopener noreferrer">View X post</Link></>
             )}
-            {item.originalId && <> · <Link href={`#move-${anchor}-${item.originalId}`}>Original evidence</Link></>}
+            {item.originalId && visibleIds.has(item.originalId) && (
+              <> · <Link href={`#move-${anchor}-${item.originalId}`}>Original evidence</Link></>
+            )}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {item.status === 'economic_release' ? (
@@ -310,7 +314,7 @@ export function MoveResult({ result, web }: { result: Explanation; web?: WebSear
   const replayed = Date.parse(result.asOf) <= Date.parse(result.end);
   const context = moveContext(result, web);
   const evidence = result.timeline.filter(item => item.status !== 'economic_release'
-    && (item.timing !== 'before' || result.lookbackEligible !== false)
+    && (item.timing !== 'before' || (context.kind !== 'web' && result.lookbackEligible !== false))
     && (context.kind === 'official' || item.status !== 'explains_move'));
   const releases = context.kind === 'calendar' ? result.timeline.filter(item => item.status === 'economic_release') : [];
   // Saved and current API responses can include conclusions and calendar prose in the summary.

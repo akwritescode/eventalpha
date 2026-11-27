@@ -199,3 +199,37 @@ it('keeps the selected-window benchmarks on a small move and hides calendar entr
   expect(screen.getByText('No verified catalyst found.')).toBeInTheDocument();
   expect(screen.queryByText('Economic calendar context')).not.toBeInTheDocument();
 });
+
+it('hides earlier context after a web explanation and lists the remaining evidence by newest publication', () => {
+  const result: Explanation = {
+    ...base,
+    start: '2026-11-25T13:22:00Z',
+    end: '2026-11-27T02:22:00Z',
+    asOf: '2026-11-27T02:23:00Z',
+    lookbackEligible: true,
+    timeline: [
+      { ...base.timeline[0], id: 'article:earlier', title: 'Pre-window article', status: 'original_source',
+        timing: 'before', publishedAt: '2026-11-23T20:00:00Z' },
+      { ...base.timeline[0], id: 'x:morning', title: 'Morning discovery', status: 'verified_discovery',
+        timing: 'during', originalId: 'article:earlier', publishedAt: '2026-11-25T15:00:00Z', firstSeenAt: '2026-11-25T19:00:00Z' },
+      { ...base.timeline[0], id: 'article:afternoon', title: 'Afternoon article', status: 'market_commentary',
+        timing: 'during', publishedAt: '2026-11-25T18:32:00Z', firstSeenAt: '2026-11-25T18:45:11Z' },
+    ],
+  };
+
+  const { rerender } = render(<MoveResult result={result} />);
+  expect(screen.getByText('Pre-window article')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Original evidence' })).toBeInTheDocument();
+
+  rerender(<MoveResult result={result} web={{ status: 'done', answer: {
+    available: true, answer: 'Reports attributed the selloff to a company announcement.',
+    sources: [{ title: 'Coverage', url: 'https://example.com/coverage' }], publishedAt: null,
+  } }} />);
+
+  const rows = screen.getAllByRole('listitem');
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toHaveTextContent('Afternoon article');
+  expect(rows[1]).toHaveTextContent('Morning discovery');
+  expect(screen.queryByText('Pre-window article')).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Original evidence' })).not.toBeInTheDocument();
+});
