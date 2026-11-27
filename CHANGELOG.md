@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/akwritescode/eventalpha/compare/v0.8.0...v0.8.1) (2026-11-27)
+
+
+### Bug fixes
+
+* **web:** show move evidence newest first ([5791b87](https://github.com/akwritescode/eventalpha/commit/5791b87bfb6c0be3b4f29b63fbcd816bb3c9ce98))
+
 ## [0.8.0](https://github.com/akwritescode/eventalpha/compare/v0.7.1...v0.8.0) (2026-11-27)
 
 
